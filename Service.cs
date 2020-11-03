@@ -18,6 +18,8 @@
     using Telegram.Bot.Args;
     using Telegram.Bot.Types.InputFiles;
     using Topshelf;
+    using WikipediaNet;
+    using WikipediaNet.Enums;
 
     static class Program
     {
@@ -67,14 +69,23 @@
                         var messageText = message.Text.Trim();
                         if (messageText.StartsWith("/sticker") || messageText.StartsWith("/с") || messageText.StartsWith("/s"))
                         {
+                            var stickerText = Regex.Replace(messageText, @"^/[^\s]+", string.Empty).Trim();
                             using (var ms = new MemoryStream())
                             {
-                                using (var img = Image.FromFile(CreateSticker(Regex.Replace(messageText, @"^/[^\s]+", string.Empty).Trim())))
+                                using (var img = Image.FromFile(CreateSticker(stickerText)))
                                 using (var imageFactory = new ImageFactory(preserveExifData: false))
                                     imageFactory.Load(img).Format(new WebPFormat()).Quality(100).Save(ms);
                                 Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(ms)).Wait();
                             }
                             return;
+                        }
+                        else if (messageText.StartsWith("/wiki") || messageText.StartsWith("/w "))
+                        {
+                            var searchText = Regex.Replace(messageText, @"^/[^\s]+", string.Empty).Trim();
+                            var wikipedia = new Wikipedia() { Language = Language.Russian, UseTLS = true, Limit = 1, What = What.Text };
+                            var results = wikipedia.Search(searchText);
+                            foreach (var s in results.Search)
+                                Bot.SendTextMessageAsync(message.Chat.Id, s.Title + "\r\n" + Regex.Replace(Regex.Replace(s.Snippet, "<[^>]+>", " "), @"\s+", " ") + "\r\n" + s.Url, replyToMessageId: message.MessageId).Wait();
                         }
                         var slotUrl = Regex.Replace(message.Text.Trim(), @"^/[^\s]+", string.Empty).Replace("\r", string.Empty).ToLower().Trim();
                         if (slotUrl.Contains("трамп") || slotUrl.Contains("байден") || slotUrl.Contains("баиден"))
