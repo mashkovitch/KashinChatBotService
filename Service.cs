@@ -21,6 +21,8 @@
 	using Telegram.Bot.Types.Enums;
 	using Telegram.Bot.Types.InputFiles;
 	using Topshelf;
+	using WikipediaNet;
+	using WikipediaNet.Enums;
 
 	static class Program
 	{
@@ -95,14 +97,27 @@
 							var commandInfo = commands[0];
 							var command = message.Text.Substring(commandInfo.Offset, commandInfo.Length).ToLower();
 							var messageText = message.Text.Substring(commandInfo.Length).Trim();
-							if (command == "/sticker" || command == "/s")
+							if ((command == "/sticker" || command == "/s") && message.Text.StartsWith("/s"))
 							{
 								using (var ms = new MemoryStream())
 								{
-									using (var img = Image.FromFile(CreateSticker(messageText)))
+									using (var img = Image.FromFile(CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText)))
 									using (var imageFactory = new ImageFactory(preserveExifData: false))
 										imageFactory.Load(img).Format(new WebPFormat()).Quality(100).Save(ms);
 									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(ms)).Wait();
+								}
+								return;
+							}
+							else if (command == "/wi" && message.Text.StartsWith("/wi"))
+							{
+								var wikipedia = new Wikipedia() { Language = Language.Russian, UseTLS = true, Limit = 1, What = What.Text };
+								var results = wikipedia.Search(messageText);
+								foreach (var s in results.Search)
+								{
+									var snippet = s.Snippet ?? "";
+									try { snippet = Regex.Replace(Regex.Replace(s.Snippet, "<[^>]+>", " "), @"\s+", " "); }
+									catch { }
+									Bot.SendTextMessageAsync(message.Chat.Id, s.Title + "\r\n" + snippet + "\r\n" + s.Url, replyToMessageId: message.MessageId, disableWebPagePreview: true).Wait();
 								}
 								return;
 							}
