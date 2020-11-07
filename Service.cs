@@ -26,7 +26,6 @@
 	using System.Text.RegularExpressions;
 	using System.Threading;
 	using System.Web;
-	using System.Xml;
 	using Telegram.Bot;
 	using Telegram.Bot.Args;
 	using Telegram.Bot.Types;
@@ -93,6 +92,9 @@
 		{
 			Console.WriteLine(Bot.GetMeAsync().Result);
 			Bot.SetWebhookAsync("").Wait();
+			KillProcess(BinaryLocation, null);
+			KillProcess(DriverLocation, null);
+			ChromeDriver driver = new ChromeDriver(Path.GetDirectoryName(DriverLocation), ChromeOptionsBase, TimeSpan.FromMinutes(10));
 			Bot.OnUpdate += (object su, UpdateEventArgs evu) =>
 			{
 				try
@@ -113,7 +115,7 @@
 						return;
 					if (message.Type == MessageType.ChatMembersAdded)
 					{
-						Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile("CAACAgIAAxUAAV-gU5wEIiOUCtqfKySQKAVJJ--yAAJLCwACI7jfCGg5X0t4-mLoHgQ"), replyToMessageId: message.MessageId).Wait();
+						Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile("CAACAgIAAxUAAV-lLxA2ditW2kiMWWkwQYQVCaFXAAJ4CwACI7jfCIhMoelNJo_LHgQ"), replyToMessageId: message.MessageId).Wait();
 						return;
 					}
 					if (message.Type != MessageType.Text)
@@ -153,35 +155,41 @@
 							else if (command == "/ss" && message.Text.StartsWith("/ss"))
 							{
 								if (evu.Update.Message.Entities != null)
+								{
 									foreach (MessageEntity linkEntity in evu.Update.Message.Entities.Where(entity => entity.Type == MessageEntityType.Url))
 										try
 										{
 											var link = new Uri(message.Text.Substring(linkEntity.Offset, linkEntity.Length));
 											var host = link.Host.ToLower();
 											if (host.Contains("twitter.com") || host.Contains("facebook.com") || host.Contains("fb.com") || host.Contains("instagram.com") || host.Contains("livejournal.com") || host.Contains("vk.com"))
-											//|| host.Contains("t.me"))
-											{
-												KillProcess(BinaryLocation, null);
-												KillProcess(DriverLocation, null);
-												ChromeDriver driver = null;
 												try
 												{
-													driver = new ChromeDriver(Path.GetDirectoryName(DriverLocation), ChromeOptionsBase, TimeSpan.FromMinutes(10));
-													var shortLink = host.Contains("facebook.com") || host.Contains("fb.com") ? GetFBID(link.AbsoluteUri) : ShortenUrl(link.AbsoluteUri);
-													var file = ScreenShooter.Get(shortLink, FolderCurrent, driver);
-													using (var fs = File.OpenRead(file))
-														Bot.SendPhotoAsync(message.Chat.Id, new InputOnlineFile(fs), host.Contains("facebook.com") || host.Contains("fb.com") ? GetFBID(link.AbsoluteUri) : link.AbsoluteUri, replyToMessageId: message.MessageId, disableNotification: true).Wait();
+													var shortLink = ShortenUrl(link.AbsoluteUri);//host.Contains("facebook.com") || host.Contains("fb.com") ? GetFBID(link.AbsoluteUri) : 
+													var fileImage = Path.Combine(FolderCurrent, ScreenShooter.ComputeHash(shortLink) + ".png");
+													if (!File.Exists(fileImage) || new FileInfo(fileImage).Length == 0)
+														try
+														{
+															fileImage = ScreenShooter.Get(link.AbsoluteUri, shortLink, FolderCurrent, driver);
+														}
+														catch (Exception ex)
+														{
+															Log.Error(new Exception(link.AbsoluteUri, ex));
+															KillProcess(BinaryLocation, null);
+															KillProcess(DriverLocation, null);
+															driver = new ChromeDriver(Path.GetDirectoryName(DriverLocation), ChromeOptionsBase, TimeSpan.FromMinutes(10));
+														}
+													using (var fs = File.OpenRead(fileImage))
+														Bot.SendPhotoAsync(message.Chat.Id
+															, new InputOnlineFile(fs)
+															, link.AbsoluteUri//host.Contains("facebook.com") || host.Contains("fb.com") ? GetFBID(link.AbsoluteUri) : 
+															, replyToMessageId: message.MessageId
+															, disableNotification: true).Wait();
 												}
 												catch (Exception ex) { Log.Error(ex); }
-												finally
-												{
-													try { driver.Close(); } catch { }
-													try { driver.Quit(); } catch { }
-												}
-												return;
-											}
 										}
 										catch (Exception ex) { Log.Error(ex); }
+									return;
+								}
 							}
 						}
 					}
@@ -198,33 +206,33 @@
 						Interlocked.Exchange(ref obsceneCount, 0);
 					}
 					if (evu.Update.Message.Entities != null)
-						foreach (MessageEntity linkEntity in evu.Update.Message.Entities.Where(entity => entity.Type == MessageEntityType.Url))
+						foreach (MessageEntity linkEntity in evu.Update.Message.Entities.Where(entity => entity.Type == MessageEntityType.Url).Take(1))
 							try
 							{
 								var link = new Uri(message.Text.Substring(linkEntity.Offset, linkEntity.Length));
 								var host = link.Host.ToLower();
-								if (host.Contains("twitter.com") || host.Contains("facebook.com") || host.Contains("fb.com") || host.Contains("instagram.com") || host.Contains("livejournal.com") || host.Contains("vk.com"))
-								//|| host.Contains("t.me"))
-								{
-									KillProcess(BinaryLocation, null);
-									KillProcess(DriverLocation, null);
-									ChromeDriver driver = null;
+								if (host.Contains("twitter.com") || host.Contains("facebook.com") || host.Contains("fb.com") || host.Contains("livejournal.com") || host.Contains("vk.com"))
 									try
 									{
-										driver = new ChromeDriver(Path.GetDirectoryName(DriverLocation), ChromeOptionsBase, TimeSpan.FromMinutes(10));
 										var shortLink = host.Contains("facebook.com") || host.Contains("fb.com") ? GetFBID(link.AbsoluteUri) : ShortenUrl(link.AbsoluteUri);
-										var file = ScreenShooter.Get(shortLink, FolderCurrent, driver);
-										using (var fs = File.OpenRead(file))
-											Bot.SendPhotoAsync(message.Chat.Id, new InputOnlineFile(fs), host.Contains("facebook.com") || host.Contains("fb.com") ? GetFBID(link.AbsoluteUri) : link.AbsoluteUri, replyToMessageId: message.MessageId, disableNotification: true).Wait();
+										var fileImage = Path.Combine(FolderCurrent, ScreenShooter.ComputeHash(shortLink) + ".png");
+										if (!File.Exists(fileImage) || new FileInfo(fileImage).Length == 0)
+											try
+											{
+												fileImage = ScreenShooter.Get(link.AbsoluteUri, shortLink, FolderCurrent, driver);
+											}
+											catch (Exception ex)
+											{
+												Log.Error(new Exception(link.AbsoluteUri, ex));
+												KillProcess(BinaryLocation, null);
+												KillProcess(DriverLocation, null);
+												driver = new ChromeDriver(Path.GetDirectoryName(DriverLocation), ChromeOptionsBase, TimeSpan.FromMinutes(10));
+											}
+										using (var fs = File.OpenRead(fileImage))
+											Bot.SendPhotoAsync(message.Chat.Id, new InputOnlineFile(fs), link.AbsoluteUri, replyToMessageId: message.MessageId, disableNotification: true).Wait();//host.Contains("facebook.com") || host.Contains("fb.com") ? GetFBID(link.AbsoluteUri) : 
 									}
 									catch (Exception ex) { Log.Error(ex); }
-									finally
-									{
-										try { driver.Close(); } catch { }
-										try { driver.Quit(); } catch { }
-									}
-									return;
-								}
+								return;
 							}
 							catch (Exception ex) { Log.Error(ex); }
 				}
@@ -240,6 +248,8 @@
 		public bool Stop(HostControl hostControl)
 		{
 			Bot.StopReceiving();
+			KillProcess(BinaryLocation, null);
+			KillProcess(DriverLocation, null);
 			return true;
 		}
 
@@ -394,7 +404,6 @@
 				options.BinaryLocation = BinaryLocation;
 				//if (!Environment.UserInteractive)
 				options.AddArgument("headless");
-				options.BinaryLocation = BinaryLocation;
 				options.AddArgument("no-default-browser-check");
 				options.AddArgument("no-first-run");
 				options.AddArgument("incognito");
@@ -484,54 +493,51 @@
 
 	public class ScreenShooter
 	{
-		public static string Get(string shortLink, string folder, ChromeDriver driver)
+		public static string Get(string originalLink, string shortLink, string folder, ChromeDriver driver)
 		{
 			string driverUrl;
 			var fileImage = Path.Combine(folder, ComputeHash(shortLink) + ".png");
 			if (File.Exists(fileImage) && new FileInfo(fileImage).Length > 0)
 				return fileImage;
 			int width = 0, height = 0, x = 0, y = 0;
+			if (driver == null)
+				throw new Exception("ChromeDriver is null!");
+			driver.Navigate().GoToUrl(originalLink + (originalLink.ToLower().Contains("livejournal.com") ? "?embed=1" : string.Empty));
 			try
 			{
-				if (driver == null)
-					throw new Exception("ChromeDriver is null!");
-				driver.Navigate().GoToUrl(shortLink + (shortLink.ToLower().Contains("livejournal.com") ? "?embed=1" : string.Empty));
+				int repeat = 300;
+				while (!((IJavaScriptExecutor)driver).ExecuteScript("return document.readyState").Equals("complete") && repeat-- > 0)
+					Thread.Sleep(100);
+			}
+			catch (Exception) { }
+
+			driverUrl = driver.Url.ToLower();
+
+			driver.GetScreenshot().SaveAsFile(fileImage + ".jpg", ScreenshotImageFormat.Jpeg);
+
+			if (driverUrl.Contains("livejournal.com"))
+				try { driver.Manage().Window.Size = new Size(500, driver.Manage().Window.Size.Height); }
+				catch { }
+			else
+				driver.Manage().Window.Size = new Size(1920, 1080);
+			if (driverUrl.Contains("facebook.com") && driverUrl.Contains("/videos/"))
+			{
+				driver.Navigate().GoToUrl(driverUrl.Replace("/videos/", "/posts/"));
 				while (String.IsNullOrWhiteSpace(driver.PageSource))
 					Thread.Sleep(100);
-
-				try
-				{
-					int repeat = 300;
-					while (!((IJavaScriptExecutor)driver).ExecuteScript("return document.readyState").Equals("complete") && repeat-- > 0)
-						Thread.Sleep(100);
-				}
-				catch (Exception) { }
-				try { driver.FindElement(By.TagName("body")).SendKeys(Keys.F11); }
-				catch { }
 				driverUrl = driver.Url.ToLower();
-				if (driverUrl.Contains("livejournal.com"))
-					try { driver.Manage().Window.Size = new Size(500, driver.Manage().Window.Size.Height); }
-					catch { }
-				else
-					driver.Manage().Window.Maximize();
-				if (driverUrl.Contains("facebook.com") && driverUrl.Contains("/videos/"))
-				{
-					driver.Navigate().GoToUrl(driverUrl.Replace("/videos/", "/posts/"));
-					while (String.IsNullOrWhiteSpace(driver.PageSource))
-						Thread.Sleep(100);
-					driverUrl = driver.Url.ToLower();
-				}
-				var driverJS = (IJavaScriptExecutor)driver;
-				var driverSS = (ITakesScreenshot)driver;
-				var jsHide = "arguments[0].style.visibility='hidden'";
-				var jsDrop = "arguments[0].style.display='none'";
-				//var jsBorder = "arguments[0].style.border='solid 1px red'";
-				var jsScroll = "arguments[0].scrollIntoView(true);";
+			}
+			var driverJS = (IJavaScriptExecutor)driver;
+			var driverSS = (ITakesScreenshot)driver;
+			var jsHide = "arguments[0].style.visibility='hidden'";
+			var jsDrop = "arguments[0].style.display='none'";
+			//var jsBorder = "arguments[0].style.border='solid 1px red'";
+			var jsScroll = "arguments[0].scrollIntoView(true);";
 
-				try { driver.ExecuteScript("arguments[0].style.display='none'", driver.FindElement(By.TagName("header"))); } catch { }
-				try
-				{
-					driver.ExecuteScript(@"
+			try { driver.ExecuteScript("arguments[0].style.display='none'", driver.FindElement(By.TagName("header"))); } catch { }
+			try
+			{
+				driver.ExecuteScript(@"
 						var elems = window.document.getElementsByTagName('*');
 						for(i = 0; i < elems.length; i++) 
 						{ 
@@ -548,236 +554,189 @@
 										 elems[i].parentNode.removeChild(elems[i]); 
 								}   
 						}");
-				}
-				catch { }
-				if (driverUrl.Contains("/t.me/"))
-				{
-					driver.Navigate().GoToUrl(driverUrl + "?embed=1");
-					IWebElement elem = driver.FindElement(By.XPath("//*[contains(@class,'tgme_widget_message')]"));
-					driverJS.ExecuteScript(jsScroll, elem);
-					width = elem.Size.Width;
-					height = elem.Size.Height;
-					x = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.X;
-					y = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.Y;
-				}
-				else if (driverUrl.Contains("facebook.com"))
-				{
-					try { driverJS.ExecuteScript(jsDrop, driver.FindElement(By.Id("pagelet_navigation"))); } catch { }
-					try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.XPath("//a[@aria-label='Story options']"))); } catch { }
-					try { driverJS.ExecuteScript(jsDrop, driver.FindElement(By.Id("u_0_c"))); } catch { }
-					try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.Id("headerArea"))); } catch { }
-					try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.XPath("//a[text()='Follow']"))); } catch { }
-					var elem = driver.FindElement(By.CssSelector("div.userContent")).FindElement(By.XPath(".."));
-					driverJS.ExecuteScript(jsScroll, elem);
-					width = elem.Size.Width;
-					height = elem.Size.Height + 25;
-					x = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.X;
-					y = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.Y;
-				}
-				else if (driverUrl.Contains("vk.com"))
-				{
+			}
+			catch { }
+			if (driverUrl.Contains("/t.me/"))
+			{
+				driver.Navigate().GoToUrl(driverUrl + "?embed=1");
+				IWebElement elem = driver.FindElement(By.XPath("//*[contains(@class,'tgme_widget_message')]"));
+				driverJS.ExecuteScript(jsScroll, elem);
+				width = elem.Size.Width;
+				height = elem.Size.Height;
+				x = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.X;
+				y = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.Y;
+			}
+			else if (driverUrl.Contains("facebook.com"))
+			{
+				try { driverJS.ExecuteScript(jsDrop, driver.FindElement(By.Id("pagelet_navigation"))); } catch { }
+				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.XPath("//a[@aria-label='Story options']"))); } catch { }
+				try { driverJS.ExecuteScript(jsDrop, driver.FindElement(By.Id("u_0_c"))); } catch { }
+				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.Id("headerArea"))); } catch { }
+				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.XPath("//a[text()='Follow']"))); } catch { }
+				var elem = driver.FindElement(By.CssSelector("div.userContent")).FindElement(By.XPath(".."));
+				driverJS.ExecuteScript(jsScroll, elem);
+				width = elem.Size.Width;
+				height = elem.Size.Height + 25;
+				x = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.X;
+				y = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.Y;
+			}
+			else if (driverUrl.Contains("vk.com"))
+			{
 
-					try
-					{
-						foreach (var elm in driver.FindElements(By.XPath("//span[contains(@class,'rel_date_needs_update')]")))
-						{
-							var pubDate = new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc)
-								.AddSeconds(long.Parse(elm.GetAttribute("time"))).ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss") + " (MSK)";
-							driverJS.ExecuteScript("arguments[0].innerHTML='" + pubDate + "';", elm);
-						}
-					}
-					catch (Exception ex)
-					{
-						Console.WriteLine(ex);
-					}
-					IWebElement element1 = null;
-					try { element1 = driver.FindElement(By.CssSelector("div.post_header")); }
-					catch (Exception ex)
-					{
-						try { File.WriteAllText(Path.ChangeExtension(fileImage, ".htm"), driver.PageSource); } catch { }
-						try { driverSS.GetScreenshot().SaveAsFile(fileImage + ".jpg", ScreenshotImageFormat.Png); } catch { }
-						throw new Exception("div.post_header" + "\t" + shortLink + "\t" + ex.Message);
-					}
-					IWebElement element2 = driver.FindElement(By.CssSelector("div.wall_text"));
-					try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.ClassName("uiScaledImageContainer")).FindElement(By.XPath("../.."))); }
-					catch { }
-					width = Math.Max(element1.Size.Width, element2.Size.Width) - 30;
-					height = element1.Size.Height + element2.Size.Height;
-					height = height < driver.Manage().Window.Size.Height ? height : driver.Manage().Window.Size.Height - element1.Location.Y;
-					x = element1.Location.X + 15;
-					y = element1.Location.Y + 15;
-				}
-				else if (driverUrl.Contains("instagram.com"))
+				try
 				{
-					try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.XPath("//nav"))); } catch { }
-					IWebElement elem = driver.FindElement(By.XPath("//article"));
-					driverJS.ExecuteScript(jsScroll, elem);
-					try
+					foreach (var elm in driver.FindElements(By.XPath("//span[contains(@class,'rel_date_needs_update')]")))
 					{
-						foreach (var elm in elem.FindElements(By.XPath("//time[@datetime]")))
-							try
-							{
-								var pubDate = DateTime.ParseExact(elm.GetAttribute("datetime"), "yyyy-MM-ddTHH:mm:ss.000Z", CultureInfo.InvariantCulture)
-									.ToLocalTime()
-									.ToString("dd.MM.yyyy HH:mm:ss") + " (MSK)";
-								driverJS.ExecuteScript("arguments[0].innerHTML='" + pubDate + "';", elm);
-								Console.WriteLine(pubDate);
-							}
-							catch { }
+						var pubDate = new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc)
+							.AddSeconds(long.Parse(elm.GetAttribute("time"))).ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss") + " (MSK)";
+						driverJS.ExecuteScript("arguments[0].innerHTML='" + pubDate + "';", elm);
 					}
-					catch { }
-					width = elem.Size.Width;
-					height = elem.Size.Height;
-					x = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.X;
-					y = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.Y;
 				}
-				else if (driverUrl.Contains("livejournal.com"))
+				catch (Exception ex)
 				{
-					if (!driverUrl.Contains("?embed"))
-					{
-						driver.Navigate().GoToUrl(driverUrl + "?embed=1");
-						while (String.IsNullOrWhiteSpace(driver.PageSource))
-							Thread.Sleep(100);
-					}
-					try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.CssSelector("div.share-embed-footer__pane"))); } catch { }
-					try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.CssSelector("div.share-embed-header__wrap-btn"))); } catch { }
-					var element1 = driver.FindElement(By.XPath("//header"));
-					var element2 = driver.FindElement(By.XPath("//article"));
-					driverJS.ExecuteScript(jsScroll, element1);
-					width = Math.Max(element1.Size.Width, element2.Size.Width);
-					height = element1.Size.Height + element2.Size.Height;
-					x = element1.Location.X;
-					y = element1.Location.Y;
+					Console.WriteLine(ex);
 				}
-				else if (driverUrl.Contains("twitter.com"))
+				IWebElement element1 = null;
+				try { element1 = driver.FindElement(By.CssSelector("div.post_header")); }
+				catch (Exception ex)
 				{
-					Thread.Sleep(3000);
-					try
-					{
-						foreach (var elm in driver.FindElements(By.XPath("//*[text()='View' or text()='Посмотреть']")))
-							driverJS.ExecuteScript("arguments[0].click();", elm);
-					}
-					catch { }
-					try { driverJS.ExecuteScript("arguments[0].remove();", new object[] { driver.FindElement(By.XPath("//*[@data-testid='primaryColumn']/div/div[1]")) }); } catch { }
-					try { driverJS.ExecuteScript("arguments[0].remove();", new object[] { driver.FindElement(By.Id("layers")) }); } catch { }
-					try { driverJS.ExecuteScript("arguments[0].remove();", new object[] { driver.FindElement(By.XPath("//*[@role='group']")) }); } catch { }
-					try { driverJS.ExecuteScript("arguments[0].remove();", new object[] { driver.FindElement(By.Name("svg")) }); } catch { }
-					try { driverJS.ExecuteScript("arguments[0].remove();", new object[] { driver.FindElement(By.XPath("//*[@data-testid='caret']")) }); } catch { }
-					try { driverJS.ExecuteScript("arguments[0].remove();", new object[] { driver.FindElement(By.XPath("//*[@role='button']")) }); } catch { }
-					Thread.Sleep(3000);
-					IWebElement elem = null;
-					try
-					{
-						elem = driver.FindElement(By.XPath("//div[@role='main' or contains(@class,'original-permalink-page')]"));
-					}
-					catch
-					{
+					try { File.WriteAllText(Path.ChangeExtension(fileImage, ".htm"), driver.PageSource); } catch { }
+					try { driverSS.GetScreenshot().SaveAsFile(fileImage + ".jpg", ScreenshotImageFormat.Png); } catch { }
+					throw new Exception("div.post_header" + "\t" + shortLink + "\t" + ex.Message);
+				}
+				IWebElement element2 = driver.FindElement(By.CssSelector("div.wall_text"));
+				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.ClassName("uiScaledImageContainer")).FindElement(By.XPath("../.."))); }
+				catch { }
+				width = Math.Max(element1.Size.Width, element2.Size.Width) - 30;
+				height = element1.Size.Height + element2.Size.Height;
+				height = height < driver.Manage().Window.Size.Height ? height : driver.Manage().Window.Size.Height - element1.Location.Y;
+				x = element1.Location.X + 15;
+				y = element1.Location.Y + 15;
+			}
+			else if (driverUrl.Contains("instagram.com"))
+			{
+				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.XPath("//nav"))); } catch { }
+				IWebElement elem = driver.FindElement(By.XPath("//article"));
+				driverJS.ExecuteScript(jsScroll, elem);
+				try
+				{
+					foreach (var elm in elem.FindElements(By.XPath("//time[@datetime]")))
 						try
 						{
-							elem = driver.FindElement(By.XPath("//div[contains(@class,'permalink-tweet')]"));
-						}
-						catch
-						{
-							try { elem = driver.FindElement(By.CssSelector("div.permalink-tweet-container")); }
-							catch
-							{
-								try { elem = driver.FindElement(By.XPath(".//div[@data-testid='tweetDetail']")); }
-								catch { elem = driver.FindElement(By.XPath("//article")); }
-							}
-						}
-					}
-					try { driverJS.ExecuteScript("arguments[0].remove();", new object[] { elem.FindElement(By.XPath(".//*[@class='css-1dbjc4n'][3]")) }); } catch { }
-					try
-					{
-						foreach (var elm in elem.FindElements(By.XPath(".//div[contains(@class,'js-machine-translated-tweet-container') or contains(@class,'stream-item-footer') or contains(@class,'tweet-stats-container')]")))// or contains(@class,'stream-footer')
-							driverJS.ExecuteScript(jsDrop, elm);
-					}
-					catch { }
-					try
-					{
-						foreach (var elm in elem.FindElements(By.XPath("//span[contains(@class,'_timestamp')]")))
-						{
-							var ts = long.Parse(elm.GetAttribute("data-time"));
-							var pubDate = new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc).AddSeconds(ts).ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss") + " (MSK)";
-							driverJS.ExecuteScript("arguments[0].innerHTML='" + pubDate + "';", elm);
-						}
-					}
-					catch (Exception ex)
-					{
-						Console.WriteLine(ex);
-					}
-					try
-					{
-						foreach (var elm in elem.FindElements(By.XPath("//div[contains(@class,'ProfileTweet-action')]")))
-							driverJS.ExecuteScript(jsHide, elm);
-					}
-					catch { }
-					try
-					{
-						foreach (var elm in elem.FindElements(By.XPath("//div[@class='dropdown']")))
-							driverJS.ExecuteScript(jsHide, elm);
-					}
-					catch { }
-					try
-					{
-						foreach (var elm in elem.FindElements(By.XPath("//button[contains(@class,'Tombstone-action')]")))
-							driverJS.ExecuteScript("arguments[0].click();", elm);
-					}
-					catch { }
-					try
-					{
-						foreach (var elm in elem.FindElements(By.XPath(".//div[contains(@class,'tweet-stats-container') or @id='descendants']")))
-							driverJS.ExecuteScript(jsDrop, elm);
-
-					}
-					catch { }
-					try
-					{
-						foreach (var elm in elem.FindElements(By.XPath("//span[contains(@class,'_timestamp')]")))
-						{
-							var ts = long.Parse(elm.GetAttribute("data-time"));
-							var pubDate = new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc).AddSeconds(ts).ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss") + " (MSK)";
+							var pubDate = DateTime.ParseExact(elm.GetAttribute("datetime"), "yyyy-MM-ddTHH:mm:ss.000Z", CultureInfo.InvariantCulture)
+								.ToLocalTime()
+								.ToString("dd.MM.yyyy HH:mm:ss") + " (MSK)";
 							driverJS.ExecuteScript("arguments[0].innerHTML='" + pubDate + "';", elm);
 							Console.WriteLine(pubDate);
 						}
-					}
-					catch (Exception ex)
-					{
-						Console.WriteLine(ex);
-					}
-					//driverJS.ExecuteScript(jsScroll, elem);
-					//убираем рамку и скругленные края
-					width = elem.Size.Width - 10;
-					height = elem.Size.Height - 10;
-					x = elem.Location.X + 5;
-					y = elem.Location.Y + 5;
-					//try
-					//{
-					//    var e = driver.FindElement(By.CssSelector("div.permalink-tweet-container"));
-					//    driverJS.ExecuteScript(jsBorder, e);
-					//    height = e.Size.Height - 10;
-					//    x = elem.Location.X + 5;
-					//    y = elem.Location.Y + 5;
-					//}
-					//catch (Exception ex)
-					//{
-					//    string s = ex.Message;
-					//}
+						catch { }
 				}
-				Directory.CreateDirectory(folder);
-				try { File.WriteAllBytes(fileImage, SaveAs(GetEntireScreenshot(driver), ImageFormat.Png, 100)); }
+				catch { }
+				width = elem.Size.Width;
+				height = elem.Size.Height;
+				x = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.X;
+				y = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.Y;
+			}
+			else if (driverUrl.Contains("livejournal.com"))
+			{
+				if (!driverUrl.Contains("?embed"))
+				{
+					driver.Navigate().GoToUrl(driverUrl + "?embed=1");
+					while (String.IsNullOrWhiteSpace(driver.PageSource))
+						Thread.Sleep(100);
+				}
+				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.CssSelector("div.share-embed-footer__pane"))); } catch { }
+				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.CssSelector("div.share-embed-header__wrap-btn"))); } catch { }
+				var element1 = driver.FindElement(By.XPath("//header"));
+				var element2 = driver.FindElement(By.XPath("//article"));
+				driverJS.ExecuteScript(jsScroll, element1);
+				width = Math.Max(element1.Size.Width, element2.Size.Width);
+				height = element1.Size.Height + element2.Size.Height;
+				x = element1.Location.X;
+				y = element1.Location.Y;
+			}
+			else if (driverUrl.Contains("twitter.com"))
+			{
+				Thread.Sleep(3000);
+				try
+				{
+					foreach (var elm in driver.FindElements(By.XPath("//*[text()='View' or text()='Посмотреть']")))
+						driverJS.ExecuteScript("arguments[0].click();", elm);
+				}
+				catch { }
+
+				try
+				{
+					var element = driver.FindElement(By.XPath("//*[contains(@aria-label,'Timeline: ') or contains(@aria-label,'Лента: ')]"));
+					driver.ExecuteScript(@"
+								var element = arguments[0];
+								var deltaY = arguments[1];
+								var box = element.getBoundingClientRect();
+								var clientX = box.left + (arguments[2] || box.width / 2);
+								var clientY = box.top + (arguments[3] || box.height / 2);
+								var target = element.ownerDocument.elementFromPoint(clientX, clientY);
+								for (var e = target; e; e = e.parentElement)
+								{
+									if (e === element)
+									{
+										target.dispatchEvent(new MouseEvent('mouseover', { view: window, bubbles: true, cancelable: true, clientX: clientX, clientY: clientY }));
+										target.dispatchEvent(new MouseEvent('mousemove', { view: window, bubbles: true, cancelable: true, clientX: clientX, clientY: clientY }));
+										target.dispatchEvent(new WheelEvent('wheel',     { view: window, bubbles: true, cancelable: true, clientX: clientX, clientY: clientY, deltaY: deltaY }));
+										return;
+									}
+								}
+								return ""Element is not interactable"";", element, -1500, 100, 100);
+				}
 				catch (Exception ex)
 				{
-					LogManager.GetCurrentClassLogger().Error(ex);
-					Thread.Sleep(2000);
-					try { File.WriteAllBytes(fileImage, SaveAs(GetEntireScreenshot(driver), ImageFormat.Png, 100)); }
-					catch { Thread.Sleep(2000); driverSS.GetScreenshot().SaveAsFile(fileImage, ScreenshotImageFormat.Png); }
+					Console.WriteLine(ex);
+				}
+				try
+				{
+					driver.ExecuteScript("window.scrollTo(0, 0);");
+					//var element = driver.FindElement(By.XPath("//*[contains(@aria-label,'Timeline: ') or contains(@aria-label,'Лента: ')]"));
+					//new OpenQA.Selenium.Interactions.Actions(driver).KeyDown(element, Keys.LeftShift).SendKeys(element, Keys.Space).Build().Perform();
+				}
+				catch (Exception ex)
+				{
+					Console.WriteLine(ex);
+				}
+				Thread.Sleep(1000);
+				var xpathes = new[] { By.XPath("//*[@data-testid='primaryColumn']/div/div[1]"), By.Id("layers"), By.Name("svg"), By.XPath("//*[@role='group']"), By.XPath("//*[@data-testid='caret']"), By.XPath("//*[@role='button']") };
+				foreach (var xpath in xpathes)
+					try
+					{
+						foreach (var elm in driver.FindElements(xpath))
+							driverJS.ExecuteScript("arguments[0].remove();", elm);
+					}
+					catch { }
+				Thread.Sleep(3000);
+				var nodes = driver.FindElements(By.XPath("//*[contains(@aria-label,'Timeline: ') or contains(@aria-label,'Лента: ')]/div/div")).ToArray();
+				var index = 0;
+				for (; index < nodes.Length; ++index)
+				{
+					var divCount = nodes[index].FindElements(By.XPath(".//div")).Count;
+					if (divCount < 10 && index > 0)
+						break;
+				}
+				width = nodes[index].Size.Width - 10;
+				height = int.Parse(Regex.Match(nodes[index].GetAttribute("style"), @"translateY\((\d+)px\);", RegexOptions.IgnoreCase).Groups[1].Value) - 20;
+				x = 5;
+				y = 5;
+				if (height <= 0)
+				{
+					var eNext = nodes[index + 1];
+					height = int.Parse(Regex.Match(eNext.GetAttribute("style"), @"translateY\((\d+)px\);", RegexOptions.IgnoreCase).Groups[1].Value) - 20;
 				}
 			}
-			finally
+			Directory.CreateDirectory(folder);
+			try { File.WriteAllBytes(fileImage, SaveAs(GetEntireScreenshot(driver), ImageFormat.Png, 100)); }
+			catch (Exception ex)
 			{
-				try { driver.Close(); } catch { }
-				try { driver.Quit(); } catch { }
+				LogManager.GetCurrentClassLogger().Error(ex);
+				Thread.Sleep(2000);
+				try { File.WriteAllBytes(fileImage, SaveAs(GetEntireScreenshot(driver), ImageFormat.Png, 100)); }
+				catch { Thread.Sleep(2000); driverSS.GetScreenshot().SaveAsFile(fileImage, ScreenshotImageFormat.Png); }
 			}
 			File.WriteAllBytes(fileImage, SaveAs(Crop(fileImage, width, height, x, y, shortLink), ImageFormat.Png, 100));
 			return fileImage;
@@ -788,13 +747,8 @@
 		static Bitmap GetEntireScreenshot(ChromeDriver browser)
 		{
 			var browserJSE = (IJavaScriptExecutor)browser;
-			var element = browser.FindElement(By.XPath("//body"));
-			var elementSize = element.Size;
-			var elementLctn = element.Location;
 			int totalWidth = (int)(long)browserJSE.ExecuteScript("return document.body.offsetWidth");
-			int elemWidth = elementSize.Width;
 			int totalHeight = (int)(long)browserJSE.ExecuteScript("return  document.body.parentNode.scrollHeight");
-			int elemHeight = elementSize.Height;
 			int viewportWidth = (int)(long)browserJSE.ExecuteScript("return document.body.clientWidth");
 			int viewportHeight = (int)(long)browserJSE.ExecuteScript("return window.innerHeight");
 			List<Rectangle> rectangles = new List<Rectangle>();
@@ -866,261 +820,6 @@
 				}
 				return (Bitmap)result.Clone();
 			}
-		}
-		public static string Get(ChromeDriver driver, string shortLink, string fileImage)
-		{
-			if (File.Exists(fileImage) && new FileInfo(fileImage).Length > 0)
-				return fileImage;
-			var driverUrl = driver.Url;
-			int width = 0, height = 0, x = 0, y = 0;
-			try
-			{
-				int repeat = 300;
-				while (!((IJavaScriptExecutor)driver).ExecuteScript("return document.readyState").Equals("complete") && repeat-- > 0)
-					Thread.Sleep(100);
-			}
-			catch (Exception) { }
-			try { driver.FindElement(By.TagName("body")).SendKeys(Keys.F11); }
-			catch { }
-			Thread.Sleep(8000);
-			driverUrl = driver.Url.ToLower();
-			if (driverUrl.Contains("livejournal.com"))
-				try { driver.Manage().Window.Size = new Size(500, driver.Manage().Window.Size.Height); }
-				catch { }
-			else
-				try { driver.Manage().Window.Maximize(); }
-				catch { }
-			if (driverUrl.Contains("facebook.com") && driverUrl.Contains("/videos/"))
-			{
-				driver.Navigate().GoToUrl(driverUrl.Replace("/videos/", "/posts/"));
-				while (String.IsNullOrWhiteSpace(driver.PageSource))
-					Thread.Sleep(100);
-				driverUrl = driver.Url.ToLower();
-			}
-			var driverJS = (IJavaScriptExecutor)driver;
-			var driverSS = (ITakesScreenshot)driver;
-			var jsHide = "arguments[0].style.visibility='hidden'";
-			var jsDrop = "arguments[0].style.display='none'";
-			//var jsBorder = "arguments[0].style.border='solid 1px red'";
-			var jsScroll = "arguments[0].scrollIntoView(true);";
-			if (driverUrl.Contains("/t.me/"))
-			{
-				driver.Navigate().GoToUrl(driverUrl + "?embed=1");
-				IWebElement elem = driver.FindElement(By.XPath("//div[@id='widget_message']"));
-				driverJS.ExecuteScript(jsScroll, elem);
-				width = elem.Size.Width;
-				height = elem.Size.Height;
-				x = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.X;
-				y = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.Y;
-			}
-			else if (driverUrl.Contains("facebook.com") || driverUrl.Contains("fb.com"))
-			{
-				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.XPath("//a[@aria-label='Story options']"))); } catch { }
-				try { driverJS.ExecuteScript(jsDrop, driver.FindElement(By.Id("u_0_c"))); } catch { }
-				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.Id("headerArea"))); } catch { }
-				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.XPath("//a[text()='Follow']"))); } catch { }
-				var elem = driver.FindElement(By.CssSelector("div.userContent")).FindElement(By.XPath(".."));
-				driverJS.ExecuteScript(jsScroll, elem);
-				width = elem.Size.Width;
-				height = elem.Size.Height;
-				x = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.X;
-				y = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.Y;
-			}
-			else if (driverUrl.Contains("vk.com"))
-			{
-				try
-				{
-					foreach (var elm in driver.FindElements(By.XPath("//span[contains(@class,'rel_date_needs_update')]")))
-					{
-						var pubDate = new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc)
-							.AddSeconds(long.Parse(elm.GetAttribute("time"))).ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss") + " (MSK)";
-						driverJS.ExecuteScript("arguments[0].innerHTML='" + pubDate + "';", elm);
-					}
-				}
-				catch (Exception ex)
-				{
-					Console.WriteLine(ex);
-				}
-				try
-				{
-					foreach (var elm in driver.FindElements(By.XPath("//*[contains(@class,'feature_tooltip__close')]")))
-						driverJS.ExecuteScript("arguments[0].click();", elm);
-				}
-				catch { }
-				try
-				{
-					foreach (var elm in driver.FindElements(By.XPath("//*[contains(@class,'feature_info_tooltip')]")))
-						driverJS.ExecuteScript(jsHide, elm);
-				}
-				catch { }
-				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.ClassName("uiScaledImageContainer")).FindElement(By.XPath("../.."))); }
-				catch { }
-
-				IWebElement element1 = driver.FindElement(By.CssSelector("div.post_header"));
-				IWebElement element2 = driver.FindElement(By.CssSelector("div.wall_text"));
-				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.ClassName("uiScaledImageContainer")).FindElement(By.XPath("../.."))); }
-				catch { }
-				width = Math.Max(element1.Size.Width, element2.Size.Width) - 30;
-				height = element1.Size.Height + element2.Size.Height;
-				height = height < driver.Manage().Window.Size.Height ? height : driver.Manage().Window.Size.Height - element1.Location.Y;
-				x = element1.Location.X + 15;
-				y = element1.Location.Y + 15;
-			}
-			else if (driverUrl.Contains("instagram.com"))
-			{
-				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.XPath("//nav"))); } catch { }
-				IWebElement elem = driver.FindElement(By.XPath("//article"));
-				driverJS.ExecuteScript(jsScroll, elem);
-				try
-				{
-					foreach (var elm in elem.FindElements(By.XPath("//time[@datetime]")))
-						try
-						{
-							var pubDate = DateTime.ParseExact(elm.GetAttribute("datetime"), "yyyy-MM-ddTHH:mm:ss.000Z", CultureInfo.InvariantCulture)
-								.ToLocalTime()
-								.ToString("dd.MM.yyyy HH:mm:ss") + " (MSK)";
-							driverJS.ExecuteScript("arguments[0].innerHTML='" + pubDate + "';", elm);
-							Console.WriteLine(pubDate);
-						}
-						catch { }
-				}
-				catch { }
-				width = elem.Size.Width;
-				height = elem.Size.Height;
-				x = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.X;
-				y = ((RemoteWebElement)elem).LocationOnScreenOnceScrolledIntoView.Y;
-			}
-			else if (driverUrl.Contains("livejournal.com"))
-			{
-				if (!driverUrl.Contains("?embed"))
-				{
-					driver.Navigate().GoToUrl(driverUrl + "?embed=1");
-					while (String.IsNullOrWhiteSpace(driver.PageSource))
-						Thread.Sleep(100);
-				}
-				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.CssSelector("div.share-embed-footer__pane"))); } catch { }
-				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.CssSelector("div.share-embed-header__wrap-btn"))); } catch { }
-				var element1 = driver.FindElement(By.XPath("//header"));
-				var element2 = driver.FindElement(By.XPath("//article"));
-				driverJS.ExecuteScript(jsScroll, element1);
-				width = Math.Max(element1.Size.Width, element2.Size.Width);
-				height = element1.Size.Height + element2.Size.Height;
-				x = element1.Location.X;
-				y = element1.Location.Y;
-			}
-			else if (driverUrl.Contains("twitter.com"))
-			{
-				Thread.Sleep(8000);
-				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.CssSelector("div.follow-bar"))); } catch { }
-				try { driverJS.ExecuteScript(jsHide, driver.FindElement(By.CssSelector("div.ProfileTweet-action--more"))); } catch { }
-				IWebElement elem = null;
-				try
-				{
-					elem = driver.FindElement(By.XPath("//div[@role='main' or contains(@class,'original-permalink-page')]"));
-				}
-				catch
-				{
-					try
-					{
-						elem = driver.FindElement(By.XPath("//div[contains(@class,'permalink-tweet')]"));
-					}
-					catch
-					{
-						try { elem = driver.FindElement(By.CssSelector("div.permalink-tweet-container")); }
-						catch { elem = driver.FindElement(By.XPath(".//div[@data-testid='tweetDetail']")); }
-					}
-				}
-				try { driverJS.ExecuteScript("arguments[0].style.display='none'", elem.FindElement(By.XPath(".//div[@aria-label='Tweet actions']"))); } catch { }
-				try { driverJS.ExecuteScript("arguments[0].style.display='none'", elem.FindElement(By.XPath(".//div[text()='Likes']")).FindElement(By.XPath("../../../.."))); } catch { }
-				try
-				{
-					foreach (var elm in elem.FindElements(By.XPath(".//div[contains(@class,'js-machine-translated-tweet-container') or contains(@class,'stream-item-footer') or contains(@class,'tweet-stats-container')]")))// or contains(@class,'stream-footer')
-						driverJS.ExecuteScript(jsDrop, elm);
-				}
-				catch { }
-				try
-				{
-					foreach (var elm in elem.FindElements(By.XPath("//span[contains(@class,'_timestamp')]")))
-					{
-						var ts = long.Parse(elm.GetAttribute("data-time"));
-						var pubDate = new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc).AddSeconds(ts).ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss") + " (MSK)";
-						driverJS.ExecuteScript("arguments[0].innerHTML='" + pubDate + "';", elm);
-						Console.WriteLine(pubDate);
-					}
-				}
-				catch (Exception ex)
-				{
-					Console.WriteLine(ex);
-				}
-				try
-				{
-					foreach (var elm in elem.FindElements(By.XPath("//div[contains(@class,'ProfileTweet-action')]")))
-						driverJS.ExecuteScript(jsHide, elm);
-				}
-				catch { }
-				try
-				{
-					foreach (var elm in elem.FindElements(By.XPath("//div[@class='dropdown']")))
-						driverJS.ExecuteScript(jsHide, elm);
-				}
-				catch { }
-				try
-				{
-					foreach (var elm in elem.FindElements(By.XPath("//button[contains(@class,'Tombstone-action')]")))
-						driverJS.ExecuteScript("arguments[0].click();", elm);
-				}
-				catch { }
-				try
-				{
-					foreach (var elm in elem.FindElements(By.XPath(".//div[contains(@class,'tweet-stats-container') or @id='descendants']")))
-						driverJS.ExecuteScript(jsDrop, elm);
-
-				}
-				catch { }
-				try
-				{
-					foreach (var elm in elem.FindElements(By.XPath("//span[contains(@class,'_timestamp')]")))
-					{
-						var ts = long.Parse(elm.GetAttribute("data-time"));
-						var pubDate = new DateTime(1970, 1, 1, 0, 0, 0, 0, System.DateTimeKind.Utc).AddSeconds(ts).ToLocalTime().ToString("dd.MM.yyyy HH:mm:ss") + " (MSK)";
-						driverJS.ExecuteScript("arguments[0].innerHTML='" + pubDate + "';", elm);
-						Console.WriteLine(pubDate);
-					}
-				}
-				catch (Exception ex)
-				{
-					Console.WriteLine(ex);
-				}
-				//driverJS.ExecuteScript(jsScroll, elem);
-				//убираем рамку и скругленные края
-				width = elem.Size.Width - 10;
-				height = elem.Size.Height - 10;
-				x = elem.Location.X + 5;
-				y = elem.Location.Y + 5;
-				//try
-				//{
-				//    var e = driver.FindElement(By.CssSelector("div.permalink-tweet-container"));
-				//    driverJS.ExecuteScript(jsBorder, e);
-				//    height = e.Size.Height - 10;
-				//    x = elem.Location.X + 5;
-				//    y = elem.Location.Y + 5;
-				//}
-				//catch (Exception ex)
-				//{
-				//    string s = ex.Message;
-				//}
-			}
-			Directory.CreateDirectory(Path.GetDirectoryName(fileImage));
-			try { driverSS.GetScreenshot().SaveAsFile(fileImage, ScreenshotImageFormat.Png); }
-			catch
-			{
-				Thread.Sleep(2000);
-				try { driverSS.GetScreenshot().SaveAsFile(fileImage, ScreenshotImageFormat.Png); }
-				catch (Exception ex) { throw new Exception(fileImage + ", " + ex.Message); }
-			}
-
-			File.WriteAllBytes(fileImage, SaveAs(Crop(fileImage, width, height, x, y, shortLink), ImageFormat.Png, 100));
-			return fileImage;
 		}
 
 		public static Image Crop(string fileImage, int width, int height, int x, int y, string link)
@@ -1469,12 +1168,12 @@
 
 		static MD5 hasher = MD5.Create();
 		static readonly object hasherLock = new object[] { };
-		private static string ComputeHash(string text)
+		public static string ComputeHash(string text)
 		{
 			return ComputeHash(Encoding.UTF8.GetBytes(text ?? string.Empty));
 		}
 
-		private static string ComputeHash(byte[] textData)
+		public static string ComputeHash(byte[] textData)
 		{
 			byte[] hashData;
 			lock (hasherLock)
