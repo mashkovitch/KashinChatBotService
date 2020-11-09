@@ -1,7 +1,5 @@
 ﻿namespace KashinChatBotService
 {
-	using ImageProcessor;
-	using ImageProcessor.Plugins.WebP.Imaging.Formats;
 	using Newtonsoft.Json;
 	using NLog;
 	using OpenQA.Selenium;
@@ -64,26 +62,11 @@
 		static TelegramBotClient Bot = new TelegramBotClient(ConfigBotKey);
 		static long obsceneCount = 0;
 		static readonly SortedSet<string> obsceneCorpus = new SortedSet<string>(File.ReadAllLines(Path.Combine(folderCurrent, "obscene_corpus.txt")), StringComparer.OrdinalIgnoreCase);//https://github.com/odaykhovskaya/obscene_words_ru/blob/master/obscene_corpus.txt
-																																														//static Regex rxObscene = new Regex(@"\w?(блад|бля|бляд|блят|говно|говна|ебал|ебат|ебись|збс|калоед|мудак|муден|пздц|пидор|пидр|пизд|пиздец|пиздос|пиздц|сука|хй|хуепут|хуи|хуисас|хуисос|хуй|ёб|ёба)\w?", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-																																														//static readonly string lyrics = "Вот избран новый Президент\r\nСоединенных Штатов\r\nПоруган старый Президент\r\nСоединенных Штатов\r\n\r\nА нам-то что - ну, Президент\r\nНу, Съединенных Штатов\r\nА интересно все ж - Президент\r\nСоединенных Штатов";
 		static readonly string[] videos = "DQACAgIAAxkDAAIEfl-hWGkIGlt9ox_aV5HCHoFzu6uLAAMJAAIKYQlJB2yyvqNHbAkeBA,DQACAgIAAxkDAAIEf1-hWG0NZKLp6QTGD-u-N0pB3C7dAAIBCQACCmEJSZZ3aBCNxEZiHgQ,DQACAgIAAxkDAAIEgF-hWG4yLT13doQC3ITCPosStLOOAAICCQACCmEJSTobDAOuB2-jHgQ,DQACAgIAAxkDAAIEgV-hWG4kS9Qd1On9gSa-oZ-ab3yXAAIDCQACCmEJSe51bd9iyaVEHgQ,DQACAgIAAxkDAAIEgl-hWG9D3WHMnhMTboOR6Ez_jd4XAAIECQACCmEJSX4HDOmNplicHgQ,DQACAgIAAxkDAAIEg1-hWHC4g6mPH7m1V6XwmEVCp1pAAAIFCQACCmEJSR_xnUupGljKHgQ".Split(',');
-		//static readonly string[] videos = "DQACAgIAAx0ERyxeIgADRl-i-V6zBYdzjI3Uupfsx50xQA03AAKiCQACWuoZSfECZ7gcbXsMHgQ,DQACAgIAAx0ERyxeIgADR1-i-V_lu9svxRYNhOHlUIC_42MCAAKjCQACWuoZSZ2iGVAdo-MUHgQ,DQACAgIAAx0ERyxeIgADSF-i-V_BdH03xUOU8gcuDh6lv4xjAAKkCQACWuoZSZYDueGEI7UQHgQ,DQACAgIAAx0ERyxeIgADSV-i-WA_ZV7e4wv7LaGkEJ3ng7KlAAKlCQACWuoZSZVPCx5uUp7DHgQ,DQACAgIAAx0ERyxeIgADSl-i-WDfHjKJeb-fA66sLVrZImG5AAKmCQACWuoZScXohVBna-6PHgQ,DQACAgIAAx0ERyxeIgADS1-i-WEava3hiw8rRjlzF6ouF8RjAAKnCQACWuoZSYVU9mhWPr58HgQ,DQACAgIAAx0ERyxeIgADTF-i-WQXgdd192QKJ0TpufFBEz82AAKoCQACWuoZSdvAPxkM_IjeHgQ".Split(',');
 		public bool Start(HostControl hostControl)
 		{
 			Log = GetLogger();
-			//var ss = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
-			//foreach (var file in Directory.EnumerateFiles(@"c:\Projects\KashinChatBotService\bin\Debug\!files", "*"))
-			//	try
-			//	{
-			//		var json = JsonConvert.DeserializeXmlNode(File.ReadAllText(file), "root");
-			//		var text = (json.DocumentElement.SelectSingleNode("//text") ?? json.DocumentElement.SelectSingleNode("//caption")).InnerText;
-			//		foreach (XmlNode entity in json.DocumentElement.SelectNodes("//entities"))
-			//			if (entity.SelectSingleNode("type").InnerText == "url")
-			//				try { ss.Add(text.Substring(int.Parse(entity.SelectSingleNode("offset").InnerText), int.Parse(entity.SelectSingleNode("length").InnerText))); }
-			//				catch { Console.WriteLine(entity.OuterXml); }
-			//	}
-			//	catch { Console.WriteLine(File.ReadAllText(file)); }
-
+			//StickerPack();
 			ProcessMessages();
 			return true;
 		}
@@ -115,7 +98,7 @@
 						return;
 					if (message.Type == MessageType.ChatMembersAdded)
 					{
-						Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile("CAACAgIAAxUAAV-lLxA2ditW2kiMWWkwQYQVCaFXAAJ4CwACI7jfCIhMoelNJo_LHgQ"), replyToMessageId: message.MessageId).Wait();
+						Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile("CAACAgIAAxUAAV-o5mqpsnMAAbXOOZ7IJUi8BQMYNAACoAsAAiO43whg0hU1D7uR1B4E"), replyToMessageId: message.MessageId).Wait();
 						return;
 					}
 					if (message.Type != MessageType.Text)
@@ -130,13 +113,15 @@
 							var messageText = message.Text.Substring(commandInfo.Length).Trim();
 							if ((command == "/sticker" || command == "/s") && message.Text.StartsWith("/s"))
 							{
-								using (var ms = new MemoryStream())
-								{
-									using (var img = Image.FromFile(CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText)))
-									using (var imageFactory = new ImageFactory(preserveExifData: false))
-										imageFactory.Load(img).Format(new WebPFormat()).Quality(100).Save(ms);
-									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(ms)).Wait();
-								}
+								//using (var ms = new MemoryStream())
+								//{
+								//	using (var img = Image.FromFile(CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText)))
+								//	using (var imageFactory = new ImageFactory(preserveExifData: false))
+								//		imageFactory.Load(img).Format(new WebPFormat()).Quality(100).Save(ms);
+								//	Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(ms)).Wait();
+								//}
+								using (var fs = File.OpenRead(CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText)))
+									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fs)).Wait();
 								return;
 							}
 							else if (command == "/wi" && message.Text.StartsWith("/wi"))
@@ -211,7 +196,7 @@
 							{
 								var link = new Uri(message.Text.Substring(linkEntity.Offset, linkEntity.Length));
 								var host = link.Host.ToLower();
-								if (host.Contains("twitter.com") || host.Contains("facebook.com") || host.Contains("fb.com") || host.Contains("livejournal.com") || host.Contains("vk.com"))
+								if (host.Contains("facebook.com") || host.Contains("fb.com"))//host.Contains("twitter.com") || host.Contains("livejournal.com") || host.Contains("vk.com"))
 									try
 									{
 										var shortLink = host.Contains("facebook.com") || host.Contains("fb.com") ? GetFBID(link.AbsoluteUri) : ShortenUrl(link.AbsoluteUri);
@@ -229,7 +214,7 @@
 												driver = new ChromeDriver(Path.GetDirectoryName(DriverLocation), ChromeOptionsBase, TimeSpan.FromMinutes(10));
 											}
 										using (var fs = File.OpenRead(fileImage))
-											Bot.SendPhotoAsync(message.Chat.Id, new InputOnlineFile(fs), link.AbsoluteUri, replyToMessageId: message.MessageId, disableNotification: true).Wait();//host.Contains("facebook.com") || host.Contains("fb.com") ? GetFBID(link.AbsoluteUri) : 
+											Bot.SendPhotoAsync(message.Chat.Id, new InputOnlineFile(fs), link.AbsoluteUri, /*replyToMessageId: message.MessageId, */disableNotification: true).Wait();//host.Contains("facebook.com") || host.Contains("fb.com") ? GetFBID(link.AbsoluteUri) : 
 									}
 									catch (Exception ex) { Log.Error(ex); }
 								return;
@@ -279,8 +264,9 @@
 			}
 			var backColor = ColorTranslator.FromHtml("#e0312c");// FE95A3
 			var rowsCount = Regex.Split(slotUrl, @"\r?\n").Length;
-			var angle = 10;
-			var b = (int)Math.Abs(((90 - angle) * Math.Tan(angle))) * rowsCount;
+			//var angle = 10;
+			//var b = (int)Math.Abs(((90 - angle) * Math.Tan(angle))) * rowsCount;
+			var b = (int)Math.Ceiling((labelMeasure.Height * 30) / 90);
 			using (var result = new Bitmap((int)labelMeasure.Width + b * 2, (int)labelMeasure.Height + (rowsCount * 20), PixelFormat.Format24bppRgb))
 			{
 				result.MakeTransparent();
@@ -313,7 +299,7 @@
 						var m = graphics.MeasureString(text, font);
 						var textLeft = b;
 						if (!leftAlign)
-							textLeft += (int)((barWidth - m.Width) - (barWidth - m.Width) / 2) - (rowsCount + 1) * 20;
+							textLeft += (int)((barWidth - m.Width) - (barWidth - m.Width) / 2) - (rowsCount) * 22;
 						graphics.DrawString(text, font, new SolidBrush(Color.White), new PointF(textLeft, offset));
 						if (strikeout)
 						{
@@ -330,7 +316,7 @@
 						offset += (int)m.Height + 5;
 					}
 				}
-
+				File.WriteAllBytes(Path.Combine(folderCurrent, "sticker.png"), ImageResize.SaveAs(result, ImageFormat.Png, 100));
 				using (var ms = new MemoryStream(ImageResize.Resize(result, null, 512, null, null, null, false)))
 				using (var iii = Image.FromStream(ms))
 				using (Bitmap r = new Bitmap(512, iii.Height, PixelFormat.Format24bppRgb))
@@ -345,7 +331,7 @@
 						graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
 						graphics.SmoothingMode = SmoothingMode.HighQuality;
 						graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-						graphics.DrawImage(iii, r.Width - iii.Width, 0, r.Width, r.Height);
+						graphics.DrawImage(iii, 0, 0, r.Width, r.Height);
 					}
 					var fileResult = Path.Combine(folderCurrent, DateTime.Now.Ticks.ToString() + ".png");
 					File.WriteAllBytes(fileResult, ImageResize.SaveAs(r, ImageFormat.Png, 100));
@@ -353,6 +339,262 @@
 				}
 			}
 		}
+
+		private void StickerPack()
+		{
+			var folderCurrent = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+			var emojis = File.ReadAllLines(Path.Combine(folderCurrent, "emojis.txt")).Select(s => s.Trim()).Distinct().Where(s => !string.IsNullOrWhiteSpace(s)).ToArray();
+			var cites = File.ReadAllLines(Path.Combine(folderCurrent, "roizmangbn.txt"));//zayanymolchy
+			var citesSel = cites.Where(s => !String.IsNullOrWhiteSpace(s)).Select(s => Regex.Replace(s.Trim(), @"\\n", "\n")).Distinct().ToArray();
+			for (int i = 0; i < citesSel.Length; ++i)
+			{
+				var messageText = citesSel[i];
+				var slotUrl = messageText;
+				var foo = new PrivateFontCollection();
+				foo.AddFontFile(Path.Combine(folderCurrent, "FreeSet-ExtraBoldOblique.otf"));
+				var fontSize = 96f;
+				var font = new Font((FontFamily)foo.Families[0], fontSize);
+				SizeF labelMeasure;
+				//SizeF labelMeasureStable;
+				using (Bitmap result = new Bitmap(512, 512, PixelFormat.Format24bppRgb))
+				{
+					result.SetResolution(96f, 96f);
+					using (Graphics graphics = Graphics.FromImage(result))
+					{
+						graphics.Clear(Color.Transparent);
+						graphics.CompositingQuality = CompositingQuality.HighQuality;
+						graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+						graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+						graphics.SmoothingMode = SmoothingMode.HighQuality;
+						graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+						font = new Font((FontFamily)foo.Families[0], fontSize);
+						labelMeasure = graphics.MeasureString(slotUrl, font);
+						//while (true)
+						//{
+						//	labelMeasure = graphics.MeasureString(slotUrl, font);
+						//	if ((int)labelMeasure.Width <= (512 - 80))
+						//	{
+						//		labelMeasureStable = labelMeasure;
+						//		fontSize++;
+						//		font = new Font((FontFamily)foo.Families[0], fontSize);
+						//	}
+						//	else
+						//	{
+						//		fontSize--;
+						//		font = new Font((FontFamily)foo.Families[0], fontSize);
+						//		labelMeasure = graphics.MeasureString(slotUrl, font);
+						//		break;
+						//	}
+						//}
+					}
+				}
+				var backColor = ColorTranslator.FromHtml("#e0312c");// FE95A3
+				var rowsCount = Regex.Split(slotUrl, @"\r?\n").Length;
+				var angle = 10;
+				var b = (int)Math.Abs(((90 - angle) * Math.Tan(angle))) * rowsCount;
+				using (var result = new Bitmap((int)labelMeasure.Width + b * 2, (int)labelMeasure.Height + (rowsCount * 20), PixelFormat.Format24bppRgb))
+				{
+					result.MakeTransparent();
+					result.SetResolution(96f, 96f);
+					using (var graphics = Graphics.FromImage(result))
+					{
+						var brushSolid = new SolidBrush(backColor);// new TextureBrush(img);// 
+						graphics.Clear(Color.Transparent);
+						graphics.CompositingQuality = CompositingQuality.HighQuality;
+						graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+						graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+						graphics.SmoothingMode = SmoothingMode.HighQuality;
+						graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+						graphics.FillPolygon(brushSolid, new[] { new Point(b, 0), new Point(b, result.Height), new Point(0, result.Height), new Point(b, 0) });
+						graphics.FillPolygon(brushSolid, new[] { new Point(result.Width - 1, 0), new Point(result.Width - b, result.Height), new Point(result.Width - b, 0), new Point(result.Width - 1, 0) });
+						graphics.FillRectangle(brushSolid, b, 0, result.Width - (b * 2), result.Height);
+						var offset = 10;
+						var barWidth = result.Width - b;
+						foreach (var line in slotUrl.Split('\n'))
+						{
+							var text = line;
+							var strikeout = false;
+							var leftAlign = false;
+							if (line.StartsWith(@"\s") || line.StartsWith(@"\l"))
+							{
+								strikeout = line.StartsWith(@"\s");
+								leftAlign = line.StartsWith(@"\l");
+								text = line.Substring(2);
+							}
+							var m = graphics.MeasureString(text, font);
+							var textLeft = b;
+							if (!leftAlign)
+								textLeft += (int)((barWidth - m.Width) - (barWidth - m.Width) / 2) - (rowsCount + 1) * 20;
+							graphics.DrawString(text, font, new SolidBrush(Color.White), new PointF(textLeft, offset));
+							if (strikeout)
+							{
+								var height = 25;
+								var width = 10;
+								var top = (int)(offset + m.Height / 2);// - height / 4);
+								var left = (int)(textLeft);
+								var right = (int)(m.Width + 20 + (barWidth - m.Width) - (barWidth - m.Width) / 2);
+								var brush = new SolidBrush(Color.White);
+								graphics.FillPolygon(brush, new[] { new Point(left + width, top), new Point(left + width, top + height), new Point(left, top + height), new Point(left + width, top) });
+								graphics.DrawLine(new Pen(brush, height), left + width, top + height / 2, right, top);
+								graphics.FillPolygon(brush, new[] { new Point(right, top - height / 2), new Point(right + width, top - height / 2), new Point(right, top + height - height / 2), new Point(right, top - height / 2) });
+							}
+							offset += (int)m.Height + 5;
+						}
+					}
+
+					using (var ms = new MemoryStream(ImageResize.Resize(result, null, 512, null, null, null, false)))
+					using (var iii = Image.FromStream(ms))
+					using (Bitmap r = new Bitmap(512, iii.Height, PixelFormat.Format24bppRgb))
+					{
+						r.MakeTransparent();
+						r.SetResolution(96f, 96f);
+						using (Graphics graphics = Graphics.FromImage(r))
+						{
+							graphics.Clear(Color.Transparent);
+							graphics.CompositingQuality = CompositingQuality.HighQuality;
+							graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+							graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+							graphics.SmoothingMode = SmoothingMode.HighQuality;
+							graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+							graphics.DrawImage(iii, r.Width - iii.Width, 0, r.Width, r.Height);
+						}
+						File.WriteAllBytes(Path.Combine(Directory.CreateDirectory(Path.Combine(folderCurrent, "!sticker_pack")).FullName, i.ToString("000") + "_s.png")
+							, ImageResize.SaveAs(r, ImageFormat.Png, 100));
+					}
+
+					//if (slotUrl.Split('\n').Length > 1)
+					//    using (var graphics = Graphics.FromImage(result))
+					//    {
+					//        SolidBrush brushSolid = new SolidBrush(backColor);
+					//        graphics.Clear(Color.Transparent);
+					//        graphics.CompositingQuality = CompositingQuality.HighQuality;
+					//        graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+					//        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+					//        graphics.SmoothingMode = SmoothingMode.HighQuality;
+					//        graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+					//        graphics.FillPolygon(brushSolid, new[] { new Point(40, 0), new Point(40, result.Height), new Point(0, result.Height), new Point(40, 0) });
+					//        graphics.FillPolygon(brushSolid, new[] { new Point(result.Width - 1, 0), new Point(result.Width - 40, result.Height), new Point(result.Width - 40, 0), new Point(result.Width - 1, 0) });
+					//        graphics.FillRectangle(brushSolid, 40, 0, result.Width - 80, result.Height);
+					//        var isRoizman = messageText.StartsWith("/r", StringComparison.OrdinalIgnoreCase);
+					//        {
+					//            using (var imgRoizman = new Bitmap((int)labelMeasure.Height + (int)labelMeasure.Height / 3, (int)labelMeasure.Height + (int)labelMeasure.Height / 3, PixelFormat.Format24bppRgb))
+					//            {
+					//                imgRoizman.MakeTransparent();
+					//                imgRoizman.SetResolution(96f, 96f);
+					//                using (var img = Image.FromFile(Path.Combine(folderCurrent, "zayanymolchy.png")))
+					//                using (var imgGraphics = Graphics.FromImage(imgRoizman))
+					//                {
+					//                    var scale = (float)img.Width / (float)imgRoizman.Width;
+					//                    imgGraphics.Clear(ColorTranslator.FromHtml("#fff"));
+					//                    imgGraphics.CompositingQuality = CompositingQuality.HighQuality;
+					//                    imgGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+					//                    imgGraphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+					//                    imgGraphics.SmoothingMode = SmoothingMode.HighQuality;
+					//                    imgGraphics.DrawImage(img, img.Width / 50, 0, imgRoizman.Height, imgRoizman.Height);
+					//                }
+					//                //                            File.WriteAllBytes(@"c:\Projects\MentionsTelegram\BigPicBotService\bin\Debug\!sticker_pack\" + i.ToString() + "_r.png"
+					//                //, RCO.KFP.News.Utilities.ImageResize.SaveAs(imgRoizman, ImageFormat.Png, 100));
+					//                DrawRndRect(graphics, new RectangleF(40, 10, (int)labelMeasure.Height, (int)labelMeasure.Height), new TextureBrush(imgRoizman), (int)labelMeasure.Height / 2);
+					//            }
+					//            graphics.DrawString(slotUrl, font, new SolidBrush(Color.White), new PointF((int)labelMeasure.Height + 80 / 2, 10));
+					//        }
+					//    }
+					//else
+					//    using (var graphics = Graphics.FromImage(result))
+					//    {
+					//        SolidBrush brushSolid = new SolidBrush(backColor);
+					//        graphics.Clear(Color.Transparent);
+					//        graphics.CompositingQuality = CompositingQuality.HighQuality;
+					//        graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+					//        graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+					//        graphics.SmoothingMode = SmoothingMode.HighQuality;
+					//        graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+					//        graphics.FillPolygon(brushSolid, new[] { new Point(20, 0), new Point(20, result.Height), new Point(0, result.Height), new Point(20, 0) });
+					//        graphics.FillPolygon(brushSolid, new[] { new Point(result.Width - 1, 0), new Point(result.Width - 20, result.Height), new Point(result.Width - 20, 0), new Point(result.Width - 1, 0) });
+					//        graphics.FillRectangle(brushSolid, 20, 0, result.Width - 40, result.Height);
+					//        var isRoizman = messageText.StartsWith("/r", StringComparison.OrdinalIgnoreCase);
+					//        {
+					//            using (var imgRoizman = new Bitmap((int)labelMeasure.Height + (int)labelMeasure.Height / 3, (int)labelMeasure.Height + (int)labelMeasure.Height / 3, PixelFormat.Format24bppRgb))
+					//            {
+					//                imgRoizman.MakeTransparent();
+					//                imgRoizman.SetResolution(96f, 96f);
+					//                using (var img = Image.FromFile(Path.Combine(folderCurrent, "zayanymolchy.png")))
+					//                using (var imgGraphics = Graphics.FromImage(imgRoizman))
+					//                {
+					//                    var scale = (float)img.Width / (float)imgRoizman.Width;
+					//                    imgGraphics.Clear(ColorTranslator.FromHtml("#fff"));
+					//                    imgGraphics.CompositingQuality = CompositingQuality.HighQuality;
+					//                    imgGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+					//                    imgGraphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+					//                    imgGraphics.SmoothingMode = SmoothingMode.HighQuality;
+					//                    imgGraphics.DrawImage(img, -20, 0, imgRoizman.Height, imgRoizman.Height);
+					//                }
+					//                DrawRndRect(graphics, new RectangleF(20, 10, (int)labelMeasure.Height, (int)labelMeasure.Height), new TextureBrush(imgRoizman), (int)labelMeasure.Height / 2);
+					//            }
+					//            graphics.DrawString(slotUrl, font, new SolidBrush(Color.White), new PointF((int)labelMeasure.Height + 80 / 2, 10));
+					//        }
+					//    }
+				}
+			}
+			var packName = "KashinRoizman_by_snapitbot";//zayanymolchy,KashinRoizman
+			try
+			{
+				var stickers = Bot.GetStickerSetAsync(packName).Result.Stickers;
+				foreach (var s in stickers)
+				{
+					while (true)
+						try
+						{
+							Bot.DeleteStickerFromSetAsync(s.FileId).Wait();
+							break;
+						}
+						catch
+						{
+							Thread.Sleep(4000);
+						}
+				}
+			}
+			catch { }
+			var files = Directory.GetFiles(Directory.CreateDirectory(Path.Combine(folderCurrent, "!sticker_pack")).FullName, "*.png");
+			//try
+			//{
+			//    using (var fs = File.OpenRead(files[0]))
+			//        Bot.CreateNewStickerSetAsync(148879395, packName, "RCO", new InputOnlineFile(fs), emojis[0]).Wait();
+			//    for (int i = 1; i < files.Length; ++i)
+			//        while (true)
+			//            try
+			//            {
+			//                using (var fs = File.OpenRead(files[i]))
+			//                    Bot.AddStickerToSetAsync(148879395, packName, new InputOnlineFile(fs), emojis[i]).Wait();
+			//                Thread.Sleep(1500);
+			//                break;
+			//            }
+			//            catch (Exception ex)
+			//            {
+			//                Console.WriteLine(ex);
+			//                Thread.Sleep(4000);
+			//            }
+			//}
+			//catch { }
+			for (int i = 0; i < files.Length; ++i)
+				while (true)
+					try
+					{
+						using (var fs = File.OpenRead(files[i]))
+							Bot.AddStickerToSetAsync(148879395, packName, new InputOnlineFile(fs), emojis[i]).Wait();
+						Thread.Sleep(1500);
+						break;
+					}
+					catch (Exception ex)
+					{
+						Console.WriteLine(ex);
+						Thread.Sleep(4000);
+					}
+			var sstickers = Bot.GetStickerSetAsync(packName).Result.Stickers;
+
+
+		}
+
 
 		static Logger GetLogger()
 		{
@@ -402,7 +644,6 @@
 			{
 				var options = new ChromeOptions();
 				options.BinaryLocation = BinaryLocation;
-				//if (!Environment.UserInteractive)
 				options.AddArgument("headless");
 				options.AddArgument("no-default-browser-check");
 				options.AddArgument("no-first-run");
@@ -452,6 +693,7 @@
 			}
 			return url;
 		}
+
 		public static void KillProcess(string ExecutablePath, string CommandLine)
 		{
 			int? pid;
@@ -488,7 +730,6 @@
 					}
 			return null;
 		}
-
 	}
 
 	public class ScreenShooter
@@ -742,8 +983,6 @@
 			return fileImage;
 		}
 
-
-
 		static Bitmap GetEntireScreenshot(ChromeDriver browser)
 		{
 			var browserJSE = (IJavaScriptExecutor)browser;
@@ -926,246 +1165,6 @@
 			}
 		}
 
-		public static void TrimWhitespace(Bitmap main, ref int width, ref int height, ref int cropX, ref int cropY)
-		{
-			int? startX = null;
-			int? startY = null;
-			int? endX = null;
-			int? endY = null;
-
-			int widthFull = Math.Min(main.Width, width + cropX);
-			int heightFull = Math.Min(main.Height, height + cropY);
-			int stride;
-			int bytesPerPixel;
-			byte[] data;
-			BitmapData bmMainData = main.LockBits(new Rectangle(0, 0, main.Width, main.Height), ImageLockMode.ReadOnly, main.PixelFormat);
-			stride = bmMainData.Stride;
-			bytesPerPixel = Math.Abs(stride) / main.Width;
-			data = new byte[Math.Abs(stride) * main.Height];
-			System.Runtime.InteropServices.Marshal.Copy(bmMainData.Scan0, data, 0, data.Length);
-			main.UnlockBits(bmMainData);
-
-			var mark = Color.White;
-			var colorWhite = MyColor.FromARGB(mark.A, mark.R, mark.G, mark.B);
-
-			var counter = 0;
-			for (int x = cropX; x < widthFull && !startX.HasValue; ++x)
-				if ((counter = CountDiffColoredPixelsColumn(data, stride, bytesPerPixel, x, cropY, heightFull, colorWhite)) > 0)
-					startX = x;
-
-			for (int y = cropY; y < heightFull && !startY.HasValue; ++y)
-				if ((counter = CountDiffColoredPixelsRow(data, stride, bytesPerPixel, y, cropX, widthFull, colorWhite)) > 0)
-					startY = y;
-
-			for (int x = widthFull - 1; x > startX && !endX.HasValue; --x)
-				if ((counter = CountDiffColoredPixelsColumn(data, stride, bytesPerPixel, x, cropY, heightFull, colorWhite)) > 0)
-					endX = x;
-
-			for (int y = heightFull - 1; y > startY && !endY.HasValue; --y)
-				if ((counter = CountDiffColoredPixelsRow(data, stride, bytesPerPixel, y, cropX, widthFull, colorWhite)) > 0)
-					endY = y + 5;
-
-			cropX = startX.HasValue ? startX.Value : cropX;
-			cropY = startY.HasValue ? startY.Value : cropY;
-			width = endX.HasValue ? endX.Value - cropX : width;
-			height = endY.HasValue ? endY.Value - cropY : height;
-
-			//cropX = cropX - 20 > 0 ? cropX - 20 : cropX - 10 > 0 ? cropX - 10 : 0;
-			//cropY = cropY - 20 > 0 ? cropY - 20 : cropY - 10 > 0 ? cropY - 10 : 0;
-			//width = width + 10 < widthFull ? width + 10 : width;
-			//height = height + 10 < heightFull ? height + 10 : height;
-		}
-
-		static int CountDiffColoredPixelsRow(byte[] data, int stride, int bytesPerPixel, int row, int beginX, int width, MyColor color)
-		{
-			//var colorGrey = ColorTranslator.FromHtml("#F5F8FA");
-			//var colorUseAsWhite = MyColor.FromARGB(colorGrey.A, colorGrey.R, colorGrey.G, colorGrey.B);
-			//var colorGrey1 = ColorTranslator.FromHtml("#E6ECF0");
-			//var colorUseAsWhite1 = MyColor.FromARGB(colorGrey1.A, colorGrey1.R, colorGrey1.G, colorGrey1.B);
-			int counter = 0;
-			for (int x = beginX; x < width; ++x)
-				try
-				{
-					if (!GetColor(x, row, stride, data, bytesPerPixel).Equals(color))
-						counter++;
-					//else if (GetColor(x, row, stride, data, bytesPerPixel).Equals(colorUseAsWhite))
-					//	counter += 0;
-					//else if (GetColor(x, row, stride, data, bytesPerPixel).Equals(colorUseAsWhite1))
-					//	counter += 0;
-					//else
-					//	counter += 1;
-				}
-				catch (Exception ex)
-				{
-					Console.WriteLine(ex);
-				}
-			return counter;
-		}
-
-		static int CountDiffColoredPixelsColumn(byte[] data, int stride, int bytesPerPixel, int col, int beginY, int height, MyColor color)
-		{
-			//var colorGrey = ColorTranslator.FromHtml("#F5F8FA");
-			//var colorUseAsWhite = MyColor.FromARGB(colorGrey.A, colorGrey.R, colorGrey.G, colorGrey.B);
-			//var colorGrey1 = ColorTranslator.FromHtml("#E6ECF0");
-			//var colorUseAsWhite1 = MyColor.FromARGB(colorGrey1.A, colorGrey1.R, colorGrey1.G, colorGrey1.B);
-			int counter = 0;
-			for (int y = beginY; y < height; ++y)
-				try
-				{
-					if (GetColor(col, y, stride, data, bytesPerPixel).Equals(color))
-						counter++;
-					//if (GetColor(col, y, stride, data, bytesPerPixel).Equals(color))
-					//	counter += 0;
-					//else if (GetColor(col, y, stride, data, bytesPerPixel).Equals(colorUseAsWhite))
-					//	counter += 0;
-					//else if (GetColor(col, y, stride, data, bytesPerPixel).Equals(colorUseAsWhite1))
-					//	counter += 0;
-					//else
-					//	counter += 1;
-				}
-				catch (Exception ex)
-				{
-					Console.WriteLine(ex);
-				}
-			return counter;
-		}
-
-		static int CountDiffColoredPixelsRectangle(Bitmap main, Rectangle rectangle, Color color)
-		{
-			int stride;
-			int bytesPerPixel;
-			byte[] data;
-			int width = main.Width;
-			int height = main.Height;
-			BitmapData bmMainData = main.LockBits(new Rectangle(0, 0, main.Width, main.Height), ImageLockMode.ReadOnly, main.PixelFormat);
-			stride = bmMainData.Stride;
-			bytesPerPixel = Math.Abs(stride) / main.Width;
-			data = new byte[Math.Abs(stride) * main.Height];
-			System.Runtime.InteropServices.Marshal.Copy(bmMainData.Scan0, data, 0, data.Length);
-			main.UnlockBits(bmMainData);
-
-			var colorCheck = MyColor.FromARGB(color.A, color.R, color.G, color.B);
-			var colorGrey = ColorTranslator.FromHtml("#F5F8FA");
-			var colorUseAsWhite = MyColor.FromARGB(colorGrey.A, colorGrey.R, colorGrey.G, colorGrey.B);
-			var colorGrey1 = ColorTranslator.FromHtml("#E6ECF0");
-			var colorUseAsWhite1 = MyColor.FromARGB(colorGrey1.A, colorGrey1.R, colorGrey1.G, colorGrey1.B);
-			int counter = 0;
-			for (int x = rectangle.X; x < Math.Min(width, rectangle.X + rectangle.Width); ++x)
-				for (int y = rectangle.Y; y < Math.Min(height, rectangle.Y + rectangle.Height); ++y)
-					try
-					{
-						if (GetColor(x, y, stride, data, bytesPerPixel).Equals(colorCheck))
-							counter += 0;
-						else if (GetColor(x, y, stride, data, bytesPerPixel).Equals(colorUseAsWhite))
-							counter += 0;
-						else if (GetColor(x, y, stride, data, bytesPerPixel).Equals(colorUseAsWhite1))
-							counter += 0;
-						else
-							counter += 1;
-					}
-					catch (Exception ex)
-					{
-						Console.WriteLine(ex);
-					}
-			return counter;
-		}
-
-		public static SortedDictionary<string, int> CountColorDistribution(Bitmap main)
-		{
-			int stride;
-			int bpp;
-			byte[] data;
-			int width = main.Width;
-			int height = main.Height;
-			BitmapData bmMainData = main.LockBits(new Rectangle(0, 0, main.Width, main.Height), ImageLockMode.ReadOnly, main.PixelFormat);
-			stride = bmMainData.Stride;
-			bpp = Math.Abs(stride) / main.Width;
-			data = new byte[Math.Abs(stride) * main.Height];
-			System.Runtime.InteropServices.Marshal.Copy(bmMainData.Scan0, data, 0, data.Length);
-			main.UnlockBits(bmMainData);
-			var retVal = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
-			for (int x = 0; x < width; ++x)
-				for (int y = 0; y < height; ++y)
-					try
-					{
-						var htmlColor = ColorTranslator.ToHtml(GetColorRGB(x, y, stride, data, bpp).ToColor());
-						if (!retVal.ContainsKey(htmlColor))
-							retVal.Add(htmlColor, 1);
-						else
-							retVal[htmlColor]++;
-					}
-					catch (Exception ex)
-					{
-						Console.WriteLine(ex);
-					}
-			return retVal;
-		}
-
-
-		static MyColor GetColorRGB(int x, int y, int stride, byte[] data, int bitCount)
-		{
-			int pos = y * stride + x * bitCount;
-			byte r = data[pos + 2];
-			byte g = data[pos + 1];
-			byte b = data[pos + 0];
-			return MyColor.FromARGB(0xff, r, g, b);
-		}
-
-		static MyColor GetColor(int x, int y, int stride, byte[] data, int bitCount)
-		{
-			int pos = y * stride + x * bitCount;
-			byte a = data[pos + 3];
-			byte r = data[pos + 2];
-			byte g = data[pos + 1];
-			byte b = data[pos + 0];
-			return MyColor.FromARGB(a, r, g, b);
-		}
-
-		struct MyColor
-		{
-			byte A;
-			byte R;
-			byte G;
-			byte B;
-
-			public Color ToColor()
-			{
-				return Color.FromArgb(this.A, this.R, this.G, this.B);
-			}
-
-			public static MyColor FromARGB(byte a, byte r, byte g, byte b)
-			{
-				MyColor mc = new MyColor();
-				mc.A = a;
-				mc.R = r;
-				mc.G = g;
-				mc.B = b;
-				return mc;
-			}
-
-			public override bool Equals(object obj)
-			{
-				if (!(obj is MyColor))
-					return false;
-				MyColor color = (MyColor)obj;
-				if (color.A == this.A && color.R == this.R && color.G == this.G && color.B == this.B)
-					return true;
-				if (this.A == color.R && this.R == color.G && this.G == color.B && this.B == color.A)
-					return true;
-				return false;
-			}
-
-			public override int GetHashCode()
-			{
-				return base.GetHashCode();
-			}
-
-			public override string ToString()
-			{
-				return "0x" + A.ToString("X2") + R.ToString("X2") + G.ToString("X2") + B.ToString("X2");
-			}
-		}
-
 		static MD5 hasher = MD5.Create();
 		static readonly object hasherLock = new object[] { };
 		public static string ComputeHash(string text)
@@ -1189,5 +1188,4 @@
 			return BitConverter.ToString(hashData).Replace("-", string.Empty);
 		}
 	}
-
 }
