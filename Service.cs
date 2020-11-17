@@ -1,12 +1,12 @@
 ﻿namespace KashinChatBotService
 {
-	using Newtonsoft.Json;
 	using NLog;
 	using OpenQA.Selenium;
 	using OpenQA.Selenium.Chrome;
 	using OpenQA.Selenium.Remote;
 	using System;
 	using System.Collections.Generic;
+	using System.Collections.Specialized;
 	using System.Configuration;
 	using System.Diagnostics;
 	using System.Drawing;
@@ -23,16 +23,21 @@
 	using System.Text;
 	using System.Text.RegularExpressions;
 	using System.Threading;
+	using System.Threading.Tasks;
 	using System.Web;
+	using System.Xml;
+	using System.Xml.Linq;
 	using Telegram.Bot;
 	using Telegram.Bot.Args;
 	using Telegram.Bot.Types;
 	using Telegram.Bot.Types.Enums;
 	using Telegram.Bot.Types.InputFiles;
 	using Topshelf;
+	using VideoLibrary;
 	using WikipediaNet;
 	using WikipediaNet.Enums;
 	using File = System.IO.File;
+	using JsonConvert = Newtonsoft.Json.JsonConvert;
 
 	static class Program
 	{
@@ -66,14 +71,247 @@
 		public bool Start(HostControl hostControl)
 		{
 			Log = GetLogger();
+
+			Task.Run(() =>
+			{
+				while (true)
+				{
+					try
+					{
+						var channelId = "UC7GcUuO8Z8OBWvJLtQ4d3Sw";
+						var data = new WebClient() { Encoding = Encoding.UTF8 }.DownloadData(new Uri("https://www.youtube.com/feeds/videos.xml?channel_id=" + channelId));
+						File.WriteAllBytes(Path.Combine(folderCurrent, "yt." + channelId + ".xml"), data);
+						using (var stream = new MemoryStream(data))
+						{
+							int position = 0;
+							while ((char)stream.ReadByte() != '<' && position < 50)
+								position++;
+							if (position == 0)
+								stream.Seek(0, SeekOrigin.Begin);
+							foreach (var feed in StreamElements(stream, new[] { "entry", "item" }))
+							{
+								var sl = new NameValueCollection(StringComparer.OrdinalIgnoreCase);
+								foreach (var element in feed.Elements())
+									try
+									{
+										if (!String.IsNullOrWhiteSpace(element.Value))
+											sl.Add(element.Name.LocalName, element.Value.Trim());
+										else if (element.HasAttributes)
+											foreach (var attr in element.Attributes())
+												try
+												{
+													if (!String.IsNullOrWhiteSpace(attr.Value))
+														sl.Add(element.Name.LocalName + "-" + attr.Name, attr.Value.Trim());
+												}
+												catch
+												{
+
+												}
+									}
+									catch (Exception ex)
+									{
+										Log.Error(ex);
+									}
+
+								Uri link;
+								if (!Uri.TryCreate(sl["link"], UriKind.Absolute, out link)
+									&& !Uri.TryCreate(sl["link-href"], UriKind.Absolute, out link)
+									&& !Uri.TryCreate(sl["id"], UriKind.Absolute, out link)
+									&& !Uri.TryCreate(sl["guid"], UriKind.Absolute, out link))
+									continue;
+								string pubDate = sl["published"] ?? sl["pubDate"] ?? sl["updated"];
+								try { pubDate = DateTime.Parse(pubDate).ToString("yyyy-MM-dd HH:mm"); }
+								catch { pubDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm"); }
+								if (DateTime.Parse(pubDate).Date != DateTime.UtcNow.Date)
+									continue;
+								var fileId = Path.Combine(folderCurrent, sl["videoId"]);
+								if (File.Exists(fileId))
+									continue;
+								var author = sl["author"].Split('\n')[0];
+								var videos = YouTube.Default.GetAllVideos(link.AbsoluteUri);
+								var audio = videos.Where(v => v.AdaptiveKind == AdaptiveKind.Audio && (v.AudioFormat == AudioFormat.Aac || v.AudioFormat == AudioFormat.Mp3)).OrderByDescending(v => v.AudioBitrate).Take(1).FirstOrDefault();
+								var title = sl["title"];
+								new Task(() =>
+								{
+									try
+									{
+										var fileAudio = Path.Combine(folderCurrent, Path.ChangeExtension(audio.FullName, ".m4a"));
+										if (!File.Exists(fileAudio) || new FileInfo(fileAudio).Length == 0)
+										{
+											try { File.Delete(fileAudio); }
+											catch { }
+											File.WriteAllBytes(fileAudio, audio.GetBytes());
+											var fileCover = Path.Combine(folderCurrent, fileId + ".jpg");
+											if (!File.Exists(fileCover) || new FileInfo(fileCover).Length == 0)
+												try { new WebClient().DownloadFile("https://i1.ytimg.com/vi/" + fileId + "/hqdefault.jpg", fileCover); }
+												catch { }
+											if (File.Exists(fileCover) && new FileInfo(fileCover).Length > 0)
+											{
+												string[] consoleOk, consoleErr;
+												Environment.CurrentDirectory = folderCurrent;
+												ExecuteProcess("tageditor-3.3.9-x86_64-w64-mingw32.exe", "-s title=\"" + title.Replace(@"""", @"\""") + "\" artist=\"" + author.Replace(@"""", @"\""") + "\" cover=\"" + fileCover + "\" -f \"" + fileAudio + "\"", TimeSpan.FromMinutes(5), out consoleOk, out consoleErr);
+											}
+										}
+										using (var fs = File.OpenRead(fileAudio))
+											Bot.SendAudioAsync(new ChatId(-1001331192169), new InputOnlineFile(fs, Path.GetFileName(fileAudio)), caption: "#anotherkashin " + ShortenUrl(link.AbsoluteUri), title: audio.Title, performer: author, duration: (int)((double)audio.ContentLength / (double)audio.AudioBitrate)).Wait();
+										File.WriteAllText(Path.Combine(folderCurrent, sl["videoId"]), DateTime.Now.Ticks.ToString());
+									}
+									catch (Exception ex)
+									{
+										Log.Error(ex);
+									}
+								}).Start();
+							}
+						}
+					}
+					catch (Exception ex)
+					{
+						Log.Error(ex);
+					}
+					try
+					{
+						var channelId = "UCRiMhZrS2VNyHVMQjQeSU4A";
+						var data = new WebClient() { Encoding = Encoding.UTF8 }.DownloadData(new Uri("https://www.youtube.com/feeds/videos.xml?channel_id=" + channelId));
+						File.WriteAllBytes(Path.Combine(folderCurrent, "yt." + channelId + ".xml"), data);
+						using (var stream = new MemoryStream(data))
+						{
+							int position = 0;
+							while ((char)stream.ReadByte() != '<' && position < 50)
+								position++;
+							if (position == 0)
+								stream.Seek(0, SeekOrigin.Begin);
+							foreach (var feed in StreamElements(stream, new[] { "entry", "item" }))
+							{
+								var sl = new NameValueCollection(StringComparer.OrdinalIgnoreCase);
+								foreach (var element in feed.Elements())
+									try
+									{
+										if (!String.IsNullOrWhiteSpace(element.Value))
+											sl.Add(element.Name.LocalName, element.Value.Trim());
+										else if (element.HasAttributes)
+											foreach (var attr in element.Attributes())
+												try
+												{
+													if (!String.IsNullOrWhiteSpace(attr.Value))
+														sl.Add(element.Name.LocalName + "-" + attr.Name, attr.Value.Trim());
+												}
+												catch
+												{
+
+												}
+									}
+									catch (Exception ex)
+									{
+										Log.Error(ex);
+									}
+
+								Uri link;
+								if (!Uri.TryCreate(sl["link"], UriKind.Absolute, out link)
+									&& !Uri.TryCreate(sl["link-href"], UriKind.Absolute, out link)
+									&& !Uri.TryCreate(sl["id"], UriKind.Absolute, out link)
+									&& !Uri.TryCreate(sl["guid"], UriKind.Absolute, out link))
+									continue;
+								var title = sl["title"];
+								if (!title.ToUpper().Contains("КАШИН"))
+									continue;
+								string pubDate = sl["published"] ?? sl["pubDate"] ?? sl["updated"];
+								try { pubDate = DateTime.Parse(pubDate).ToString("yyyy-MM-dd HH:mm"); }
+								catch { pubDate = DateTime.Now.ToString("yyyy-MM-dd HH:mm"); }
+								if (DateTime.Parse(pubDate).Date != DateTime.UtcNow.Date)
+									continue;
+								var fileId = Path.Combine(folderCurrent, sl["videoId"]);
+								if (File.Exists(fileId))
+									continue;
+								var author = sl["author"].Split('\n')[0];
+								var videos = YouTube.Default.GetAllVideos(link.AbsoluteUri);
+								var audio = videos.Where(v => v.AdaptiveKind == AdaptiveKind.Audio && (v.AudioFormat == AudioFormat.Aac || v.AudioFormat == AudioFormat.Mp3)).OrderByDescending(v => v.AudioBitrate).Take(1).FirstOrDefault();
+								new Task(() =>
+								{
+									try
+									{
+										var fileAudio = Path.Combine(folderCurrent, Path.ChangeExtension(audio.FullName, ".m4a"));
+										if (!File.Exists(fileAudio) || new FileInfo(fileAudio).Length == 0)
+										{
+											try { File.Delete(fileAudio); }
+											catch { }
+											File.WriteAllBytes(fileAudio, audio.GetBytes());
+											var fileCover = Path.Combine(folderCurrent, fileId + ".jpg");
+											if (!File.Exists(fileCover) || new FileInfo(fileCover).Length == 0)
+												try { new WebClient().DownloadFile("https://i1.ytimg.com/vi/" + fileId + "/hqdefault.jpg", fileCover); }
+												catch { }
+											if (File.Exists(fileCover) && new FileInfo(fileCover).Length > 0)
+											{
+												string[] consoleOk, consoleErr;
+												Environment.CurrentDirectory = folderCurrent;
+												ExecuteProcess("tageditor-3.3.9-x86_64-w64-mingw32.exe", "-s title=\"" + title.Replace(@"""", @"\""") + "\" artist=\"" + author.Replace(@"""", @"\""") + "\" cover=\"" + fileCover + "\" -f \"" + fileAudio + "\"", TimeSpan.FromMinutes(5), out consoleOk, out consoleErr);
+											}
+										}
+										using (var fs = File.OpenRead(fileAudio))
+											Bot.SendAudioAsync(new ChatId(-1001331192169), new InputOnlineFile(fs, Path.GetFileName(fileAudio)), caption: "#Кашин " + ShortenUrl(link.AbsoluteUri), title: audio.Title, performer: author, duration: (int)((double)audio.ContentLength / (double)audio.AudioBitrate)).Wait();
+										File.WriteAllText(Path.Combine(folderCurrent, sl["videoId"]), DateTime.Now.Ticks.ToString());
+									}
+									catch (Exception ex)
+									{
+										Log.Error(ex);
+									}
+								}).Start();
+							}
+						}
+					}
+					catch (Exception ex)
+					{
+						Log.Error(ex);
+					}
+					Thread.Sleep(TimeSpan.FromMinutes(5));
+				}
+			});
 			//StickerPack();
+			//GetStat();
 			ProcessMessages();
 			return true;
 		}
 
+		static string GetTitle(string titleText)
+		{
+			if (String.IsNullOrWhiteSpace(titleText))
+				return "No title";
+			var title = Regex.Replace(titleText, @"\s+", " ").Trim();
+			return title;//.Substring(0, Math.Min(25, title.Length)).PadLeft(25, ' ');
+		}
+
+		static IEnumerable<XElement> StreamElements(Stream xml, string[] names)
+		{
+			var settings = new XmlReaderSettings { NameTable = new NameTable() };
+			settings.ConformanceLevel = ConformanceLevel.Fragment;
+			settings.DtdProcessing = DtdProcessing.Ignore;
+			var xmlns = new XmlNamespaceManager(settings.NameTable);
+			var context = new XmlParserContext(null, xmlns, string.Empty, XmlSpace.Default, Encoding.UTF8);
+			var elementNames = new SortedSet<string>(names, StringComparer.OrdinalIgnoreCase);
+			using (XmlReader reader = XmlReader.Create(xml, settings, context))
+			{
+				//reader.MoveToContent();
+				while (reader.Read())
+					if (reader.NodeType == XmlNodeType.Element && elementNames.Contains(reader.Name))
+					{
+						XElement element = null;
+						try
+						{
+							element = XElement.ReadFrom(reader) as XElement;
+						}
+						catch
+						{
+							yield break;
+						}
+						yield return element;
+					}
+			}
+			yield break;
+		}
+
 		private void ProcessMessages()
 		{
-			Console.WriteLine(Bot.GetMeAsync().Result);
+			var meName = "@" + Bot.GetMeAsync().Result.Username;
+			Console.WriteLine(meName);
 			Bot.SetWebhookAsync("").Wait();
 			KillProcess(BinaryLocation, null);
 			KillProcess(DriverLocation, null);
@@ -101,6 +339,25 @@
 						Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile("CAACAgIAAxUAAV-o5mqpsnMAAbXOOZ7IJUi8BQMYNAACoAsAAiO43whg0hU1D7uR1B4E"), replyToMessageId: message.MessageId).Wait();
 						return;
 					}
+					if (message.Type == MessageType.Document
+						&& !string.IsNullOrWhiteSpace(message.Caption)
+						&& Path.GetExtension(message.Document.FileName).ToLower().EndsWith("tf", StringComparison.OrdinalIgnoreCase))
+					{
+						Bot.SendChatActionAsync(message.Chat.Id, ChatAction.UploadDocument).Wait();
+						var fileFont = Path.Combine(folderCurrent, message.Document.FileName);
+						if (!File.Exists(fileFont) || new FileInfo(fileFont).Length == 0)
+							using (var fs = File.Create(Path.Combine(folderCurrent, message.Document.FileName)))
+								Bot.DownloadFileAsync(Bot.GetFileAsync(message.Document.FileId).Result.FilePath, fs).Wait();
+						var messageText = message.Caption;
+						string fileId;
+						var fileResult = CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText, fileFont, Color.White, ColorTranslator.FromHtml("#e0312c"), null, out fileId);
+						if (string.IsNullOrWhiteSpace(fileId))
+							using (var fs = File.OpenRead(fileResult))
+								Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fs)).Wait();
+						else
+							Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fileId)).Wait();
+						return;
+					}
 					if (message.Type != MessageType.Text)
 						return;
 					if (evu.Update.Message.Entities != null)
@@ -111,6 +368,125 @@
 							var commandInfo = commands[0];
 							var command = message.Text.Substring(commandInfo.Offset, commandInfo.Length).ToLower();
 							var messageText = message.Text.Substring(commandInfo.Length).Trim();
+							if (command.EndsWith(meName, StringComparison.OrdinalIgnoreCase))
+								command = command.Substring(0, command.Length - meName.Length);
+							if (command == "/yt")
+							{
+								//http://www.youtube.com/get_video_info?&video_id=OhSqR2FcsxY
+								//var fileCache = Path.Combine(folderCurrent, ScreenShooter.ComputeHash(messageText) + ".htm");
+								try
+								{
+									var yt = Encoding.UTF8.GetString(new WebClient().DownloadData(messageText));
+									//	var links = new SortedSet<string>();
+									var videoTitle = HttpUtility.HtmlDecode(Regex.Match(yt, "<title>([^<]+)", RegexOptions.IgnoreCase).Groups[1].Value).Trim();
+									var author = string.Empty;
+									try { author = HttpUtility.HtmlDecode(Regex.Match(yt, @"ownerChannelName\"":\""([^""]+)", RegexOptions.IgnoreCase).Groups[1].Value).Trim(); }
+									catch (Exception ex)
+									{
+										Log.Error(ex);
+									}
+									var id = Regex.Match(yt, @"<meta\s+itemprop=""videoId""\s+content=""([^""]+)", RegexOptions.IgnoreCase).Groups[1].Value;
+									var fileCover = Path.Combine(folderCurrent, id + ".jpg");
+									try
+									{
+										var cover = Regex.Match(yt, @"href=""([^""]+maxresdefault.jpg)""", RegexOptions.IgnoreCase).Groups[1].Value;
+										if (string.IsNullOrWhiteSpace(cover))
+											cover = Regex.Match(yt, @"href=""([^""]+hqdefault.jpg)""", RegexOptions.IgnoreCase).Groups[1].Value;
+										new WebClient().DownloadFile(cover, fileCover);
+									}
+									catch (Exception ex)
+									{
+										Log.Error(ex);
+									}
+									//	var audioUrl = string.Empty;
+									//	TimeSpan? duration = null;
+									//	foreach (var format in new[] { "adaptiveFormats", "formats" })
+									//		foreach (Match mItag in Regex.Matches(yt, string.Format(@"\\""{0}\\"":(\[[^\]]+\])",format), RegexOptions.IgnoreCase))
+									//			try
+									//			{
+									//				dynamic formats = JsonConvert.DeserializeObject(mItag.Groups[1].Value.Replace(@"\\\""","'").Replace("\\",string.Empty));
+									//				foreach (var json in formats)
+									//					try
+									//					{
+									//						ulong resolution = 0;
+									//						try { resolution = uint.Parse(json.width.ToString()) * uint.Parse(json.height.ToString()); }
+									//						catch (Exception ex)
+									//						{
+									//							Log.Error(ex);
+									//						}
+									//						Int64 contentLength = 0;
+									//						try { contentLength = Int64.Parse(json.contentLength.ToString()); }
+									//						catch { }
+									//						if (contentLength == 0)
+									//							continue;
+									//						var mimeType = json.mimeType.ToString().Split(';')[0];
+									//						if (!mimeType.EndsWith("/mp4"))
+									//							continue;
+									//						var indexOf = 0;
+									//						try { indexOf = json.signatureCipher.ToString().IndexOf("https:"); }
+									//						catch { }
+									//						var url = HttpUtility.UrlDecode((json.url == null ? (json.signatureCipher.ToString().Substring(indexOf) + "&" + json.signatureCipher.ToString().Substring(0,indexOf)) : json.url).ToString().Replace("u0026", "&"));
+									//						if (mimeType == "audio/mp4")
+									//						{
+									//							audioUrl = url;
+									//							links.Add(resolution + "@" + mimeType
+									//								+ (resolution > 0 ? (", " + json.width + "x" + json.height) : string.Empty)
+									//								+ " / " + SizeSuffix(Int64.Parse(json.averageBitrate.ToString())) + "/сек."
+									//								+ ", " + ShortenUrl(url)
+									//								+ " (" + SizeSuffix(contentLength) + ")");
+									//							if (!duration.HasValue && !string.IsNullOrWhiteSpace((json.approxDurationMs ?? "").ToString()))
+									//								duration = TimeSpan.FromMilliseconds(double.Parse(json.approxDurationMs.ToString()));
+									//						}
+									//					}
+									//					catch (Exception ex)
+									//					{
+									//						Log.Error(ex);
+									//					}
+									//			}
+									//			catch (Exception ex)
+									//			{
+									//				Log.Error(ex);
+									//			}
+									var videos = YouTube.Default.GetAllVideos(messageText);
+									var audio = videos.Where(v => v.AdaptiveKind == AdaptiveKind.Audio && (v.AudioFormat == AudioFormat.Aac || v.AudioFormat == AudioFormat.Mp3)).OrderByDescending(v => v.AudioBitrate).Take(1).FirstOrDefault();
+									var links = new SortedSet<string>();
+									foreach (var v in videos.Where(v => v.Resolution > 0 && v.AudioBitrate > 0 && v.ContentLength.HasValue).OrderByDescending(v => v.ContentLength))
+										links.Add("видео, " + ShortenUrl(v.Uri) + ", (" + SizeSuffix(v.ContentLength.Value) + "), " + v.Resolution + " / " + v.AudioBitrate);
+									Bot.SendTextMessageAsync(message.Chat.Id, "аудио, " + ShortenUrl(audio.Uri) + ", (" + SizeSuffix(audio.ContentLength ?? 0) + ")" + (links.Count == 0 ? "" : (Environment.NewLine + string.Join(Environment.NewLine, links.ToArray()))), replyToMessageId: message.MessageId, disableWebPagePreview: true).Wait();
+									new Task(() =>
+									{
+										try
+										{
+											var fileAudio = Path.Combine(folderCurrent, Path.ChangeExtension(audio.FullName, ".m4a"));
+											if (!File.Exists(fileAudio) || new FileInfo(fileAudio).Length == 0)
+											{
+												try { File.Delete(fileAudio); }
+												catch { }
+												File.WriteAllBytes(fileAudio, audio.GetBytes());
+												if (File.Exists(fileCover) && new FileInfo(fileCover).Length > 0)
+												{
+													string[] consoleOk, consoleErr;
+													Environment.CurrentDirectory = folderCurrent;
+													ExecuteProcess("tageditor-3.3.9-x86_64-w64-mingw32.exe", "-s title=\"" + videoTitle.Replace(@"""", @"\""") + "\" artist=\"" + author.Replace(@"""", @"\""") + "\" cover=\"" + fileCover + "\" -f \"" + fileAudio + "\"", TimeSpan.FromMinutes(5), out consoleOk, out consoleErr);
+													//	AddMp3Tags(fileAudio, fileCover, videoTitle, new[] { author });
+												}
+											}
+											using (var fs = File.OpenRead(fileAudio))
+												Bot.SendAudioAsync(message.Chat.Id, new InputOnlineFile(fs, Path.GetFileName(fileAudio)), messageText, title: audio.Title, performer: author, duration: (int)((double)audio.ContentLength / (double)audio.AudioBitrate)).Wait();
+										}
+										catch (Exception ex)
+										{
+											Bot.SendTextMessageAsync(message.Chat.Id, "Не удалось выгрузить аудио-версию: " + ShortenUrl(audio.Uri) + ", ошибка: " + ex.ToString(), replyToMessageId: message.MessageId, disableWebPagePreview: true).Wait();
+										}
+									}).Start();
+								}
+								catch (Exception ex)
+								{
+									Bot.SendTextMessageAsync(message.Chat.Id, "Не удалось выгрузить информацию о ролике: " + ex.ToString(), replyToMessageId: message.MessageId, disableWebPagePreview: true).Wait();
+								}
+								return;
+							}
+							else
 							if ((command == "/sticker" || command == "/s") && message.Text.StartsWith("/s"))
 							{
 								//using (var ms = new MemoryStream())
@@ -120,21 +496,107 @@
 								//		imageFactory.Load(img).Format(new WebPFormat()).Quality(100).Save(ms);
 								//	Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(ms)).Wait();
 								//}
-								using (var fs = File.OpenRead(CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText)))
-									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fs)).Wait();
+								string fileId;
+								var fileResult = CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText, Path.Combine(folderCurrent, "FreeSet-ExtraBoldOblique.otf"), Color.White, ColorTranslator.FromHtml("#e0312c"), null, out fileId);
+								if (string.IsNullOrWhiteSpace(fileId))
+									using (var fs = File.OpenRead(fileResult))
+										Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fs)).Wait();
+								else
+									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fileId)).Wait();
+								return;
+							}
+							else if ((command == "/st") && message.Text.StartsWith("/st"))
+							{
+								string fileId;
+								var fileResult = CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText, Path.Combine(folderCurrent, "FreeSet-ExtraBoldOblique.otf"), Color.White, ColorTranslator.FromHtml("#e0312c"), messageText.Split(' ')[0], out fileId);
+								if (string.IsNullOrWhiteSpace(fileId))
+									using (var fs = File.OpenRead(fileResult))
+										Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fs)).Wait();
+								else
+									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fileId)).Wait();
+								return;
+							}
+							else if ((command == "/sl") && message.Text.StartsWith("/sl"))
+							{
+								string fileId;
+								var fileResult = CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText, Path.Combine(folderCurrent, "Lineatura.ttf"), Color.White, ColorTranslator.FromHtml("#e0312c"), null, out fileId);
+								if (string.IsNullOrWhiteSpace(fileId))
+									using (var fs = File.OpenRead(fileResult))
+										Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fs)).Wait();
+								else
+									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fileId)).Wait();
+								return;
+							}
+							else if ((command == "/sb") && message.Text.StartsWith("/sb"))
+							{
+								string fileId;
+								var fileResult = CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText, Path.Combine(folderCurrent, "Lineatura.ttf"), Color.White, Color.Black, null, out fileId);
+								if (string.IsNullOrWhiteSpace(fileId))
+									using (var fs = File.OpenRead(fileResult))
+										Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fs)).Wait();
+								else
+									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fileId)).Wait();
+								return;
+							}
+							else if ((command == "/sw") && message.Text.StartsWith("/sw"))
+							{
+								string fileId;
+								var fileResult = CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText, Path.Combine(folderCurrent, "Lineatura.ttf"), Color.Black, Color.White, null, out fileId);
+								if (string.IsNullOrWhiteSpace(fileId))
+									using (var fs = File.OpenRead(fileResult))
+										Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fs)).Wait();
+								else
+									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fileId)).Wait();
+								return;
+							}
+							else if ((command == "/sp") && message.Text.StartsWith("/sp"))
+							{
+								string fileId;
+								var fileResult = CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText, Path.Combine(folderCurrent, "PRAVDA.otf"), Color.White, ColorTranslator.FromHtml("#e0312c"), null, out fileId);
+								if (string.IsNullOrWhiteSpace(fileId))
+									using (var fs = File.OpenRead(fileResult))
+										Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fs)).Wait();
+								else
+									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fileId)).Wait();
+								return;
+							}
+							else if ((command == "/spb") && message.Text.StartsWith("/spb"))
+							{
+								string fileId;
+								var fileResult = CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText, Path.Combine(folderCurrent, "PRAVDA.otf"), Color.White, Color.Black, null, out fileId);
+								if (string.IsNullOrWhiteSpace(fileId))
+									using (var fs = File.OpenRead(fileResult))
+										Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fs)).Wait();
+								else
+									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fileId)).Wait();
+								return;
+							}
+							else if ((command == "/spw") && message.Text.StartsWith("/spw"))
+							{
+								string fileId;
+								var fileResult = CreateSticker(string.IsNullOrWhiteSpace(messageText) ? "РУССКИЕ\nВПЕРЕД!" : messageText, Path.Combine(folderCurrent, "PRAVDA.otf"), Color.Black, Color.White, null, out fileId);
+								if (string.IsNullOrWhiteSpace(fileId))
+									using (var fs = File.OpenRead(fileResult))
+										Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fs)).Wait();
+								else
+									Bot.SendStickerAsync(message.Chat.Id, new InputOnlineFile(fileId)).Wait();
 								return;
 							}
 							else if (command == "/wi" && message.Text.StartsWith("/wi"))
 							{
 								var wikipedia = new Wikipedia() { Language = Language.Russian, UseTLS = true, Limit = 1, What = What.Text };
-								var results = wikipedia.Search(messageText);
-								foreach (var s in results.Search)
+								try
 								{
-									var snippet = s.Snippet ?? "";
-									try { snippet = Regex.Replace(Regex.Replace(s.Snippet, "<[^>]+>", " "), @"\s+", " "); }
-									catch { }
-									Bot.SendTextMessageAsync(message.Chat.Id, s.Title + "\r\n" + snippet + "\r\n" + s.Url, replyToMessageId: message.MessageId, disableWebPagePreview: true).Wait();
+									var results = wikipedia.Search(messageText);
+									foreach (var s in results.Search)
+									{
+										var snippet = s.Snippet ?? "";
+										try { snippet = Regex.Replace(Regex.Replace(s.Snippet, "<[^>]+>", " "), @"\s+", " "); }
+										catch { }
+										Bot.SendTextMessageAsync(message.Chat.Id, s.Title + "\r\n" + snippet + "\r\n" + s.Url, replyToMessageId: message.MessageId, disableWebPagePreview: true).Wait();
+									}
 								}
+								catch { Bot.SendTextMessageAsync(message.Chat.Id, "Ничего не смог найти для вас!", replyToMessageId: message.MessageId, disableWebPagePreview: true).Wait(); }
 								return;
 							}
 							else if (command == "/ss" && message.Text.StartsWith("/ss"))
@@ -176,6 +638,22 @@
 									return;
 								}
 							}
+							else if (command == "/h")
+								Bot.SendTextMessageAsync(
+									chatId: message.Chat.Id,
+									text: "Usage:\n" +
+											"/s	текст   - стикер \"FreeSet-Extra\"\n" +
+											"/sl текст  - стикер \"Lineatura\"\n" +
+											"/sb текст  - стикер \"Lineatura\" (черный фон)\n" +
+											"/sw текст  - стикер \"Lineatura\" (белый фон)\n" +
+											"/sp текст  - стикер \"Правда\"\n" +
+											"/spb текст - стикер \"Правда\" (черый фон)\n" +
+											"/spw текст - стикер \"Правда\" (белый фон)\n" +
+											"/ss адрес	- скрин сообщения из соцсетей (ТВ,ВК,ИН,ФБ,ЖЖ)\n" +
+											"/wi текст  - запрос в Википедию\n" +
+											"/yt адрес  - получить ссылки на звук и видео youtube-ролика"
+								//+ "/yta адрес - выгрузить звуковую дорожку youtube-ролика"
+								).Wait();
 						}
 					}
 					//var slotUrl = Regex.Replace(message.Text.Trim(), @"^/[^\s]+", string.Empty).Replace("\r", string.Empty).ToLower().Trim();
@@ -238,12 +716,149 @@
 			return true;
 		}
 
-		static string CreateSticker(string messageText)
+		public void AddMp3Tags(string fileAudio, string fileCover, string title, string[] performers)
 		{
+			TagLib.Id3v2.Tag.DefaultVersion = 3;
+			TagLib.Id3v2.Tag.ForceDefaultVersion = true;
+			using (var file = TagLib.File.Create(fileAudio))
+			{
+				file.Tag.Pictures = new[] { new TagLib.Id3v2.AttachmentFrame
+					{
+						Type = TagLib.PictureType.FrontCover,
+						Description = "Cover",
+						MimeType = System.Net.Mime.MediaTypeNames.Image.Jpeg,
+						Filename = Path.GetFileName(fileCover),
+						Data = File.ReadAllBytes(fileCover),
+						TextEncoding = TagLib.StringType.UTF16
+					}
+				};
+				file.Tag.Title = title;
+				file.Tag.Performers = performers;
+				file.Tag.Year = (uint)DateTime.UtcNow.Year;
+				file.Tag.DateTagged = DateTime.UtcNow;
+				file.RemoveTags(file.TagTypes & ~file.TagTypesOnDisk);
+				file.Save();
+			}
+		}
+		static void GetStat()
+		{
+			var userHours = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+			var dates = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+			var names = new SortedSet<string>(StringComparer.OrdinalIgnoreCase);
+			var userCount = new SortedDictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+			foreach (var file in Directory.EnumerateFiles(@"C:\Users\HP\Downloads\Telegram Desktop\ChatExport_2020-11-15", "*.json", SearchOption.AllDirectories))
+			{
+				dynamic json = JsonConvert.DeserializeObject(File.ReadAllText(file));
+				foreach (var message in json.messages)
+					try
+					{
+						if (message.type.ToString() != "message")
+						{
+							Console.WriteLine(message.action.ToString());
+							continue;
+						}
+						var userName = message.from.ToString();
+						var text = (message.text ?? "").ToString();
+						var date = (DateTime)message.date;
+						var key = userName + "@" + date.ToString("yyyyMMddHH");
+						var count = 0;
+						foreach (var word in Regex.Split(text, @"\s+"))
+							if (obsceneCorpus.Contains(word))
+								count++;
+						if (!userHours.ContainsKey(key))
+							userHours.Add(key, count);
+						else
+							userHours[key] += count;
+						dates.Add(date.ToString("yyyyMMddHH"));
+						names.Add(userName);
+						if (!userCount.ContainsKey(userName))
+							userCount.Add(userName, count);
+						else
+							userCount[userName] += count;
+					}
+					catch (Exception ex) { Console.WriteLine(ex); }
+			}
+			var first = DateTime.ParseExact(dates.First(), "yyyyMMddHH", CultureInfo.InvariantCulture);
+			var last = DateTime.ParseExact(dates.Last(), "yyyyMMddHH", CultureInfo.InvariantCulture);
+			var hoursTotal = last.Subtract(first).TotalHours;
+			using (var sw = new StreamWriter(@"stat.htm", false, Encoding.UTF8))
+			{
+				sw.Write("<table border='1'><tr><th>User</th><th>Total</th><th>Avg</th>");
+				for (DateTime d = first; d <= last; d = d.AddHours(1))
+					sw.Write("<th>" + d.ToString("dd.MM.yy HH:mm") + "</th>");
+				sw.WriteLine("</tr>");
+				foreach (var user in userCount.OrderByDescending(u => u.Value).Select(s => s.Key))
+				{
+					sw.Write("<tr><th>" + user.Split('@')[0] + "</th>");
+					sw.Write("<td>" + userCount[user] + "</td>");
+					sw.Write("<td>" + (int)(userCount[user] / hoursTotal) + "</td>");
+					for (DateTime d = first; d <= last; d = d.AddHours(1))
+					{
+						var key = user + "@" + d.ToString("yyyyMMddHH");
+						var val = (userHours.ContainsKey(key) ? userHours[key] : 0);
+						sw.Write("<td" + (val > 0 ? " style='background-color:red'>" : ">") + val + "</td>");
+					}
+					sw.WriteLine("</tr>");
+				}
+				sw.Write("</table>");
+			}
+			using (var sw = new StreamWriter(@"stat.csv", false, Encoding.UTF8))
+			{
+				sw.Write("User;Total;Avg");
+				for (DateTime d = first; d <= last; d = d.AddHours(1))
+					sw.Write(";" + d.ToString("dd.MM.yy HH:mm"));
+				sw.WriteLine();
+				foreach (var user in userCount.OrderByDescending(u => u.Value).Select(s => s.Key))
+				{
+					sw.Write(user.Split('@')[0] + ";");
+					sw.Write(userCount[user] + ";");
+					sw.Write((int)(userCount[user] / hoursTotal));
+					for (DateTime d = first; d <= last; d = d.AddHours(1))
+					{
+						var key = user + "@" + d.ToString("yyyyMMddHH");
+						var val = (userHours.ContainsKey(key) ? userHours[key] : 0);
+						sw.Write(";" + val);
+					}
+					sw.WriteLine();
+				}
+			}
+		}
+		static string GetTwitterImage(string twitterName)
+		{
+			var file = Path.Combine(FolderCurrent, twitterName + ".jpg");
+			if (!File.Exists(file) || new FileInfo(file).Length == 0)
+			{
+				ChromeDriver driver = null;
+				try
+				{
+					driver = new ChromeDriver(Path.GetDirectoryName(DriverLocation), ChromeOptionsBase, TimeSpan.FromMinutes(10));
+					driver.Navigate().GoToUrl("https://twitter.com/" + twitterName + "/photo");
+					Thread.Sleep(7000);
+					var s = driver.PageSource;
+					var imgs = driver.FindElements(By.XPath("//img[@src]"));
+					var img = imgs[imgs.Count - 1];
+					new WebClient().DownloadFile(img.GetAttribute("src"), file);
+				}
+				catch (Exception ex) { Log.Error(ex); }
+				finally
+				{
+					try { driver.Close(); } catch { }
+					try { driver.Quit(); } catch { }
+				}
+			}
+			return file;
+		}
+
+
+		static string CreateSticker(string messageText, string fileFont, Color textColor, Color backColor, string twitterName, out string fileId)
+		{
+			fileId = string.Empty;
 			var slotUrl = messageText;
+			if (!string.IsNullOrWhiteSpace(twitterName))
+				slotUrl = slotUrl.Substring(twitterName.Length).Trim();
 			var foo = new PrivateFontCollection();
-			foo.AddFontFile(Path.Combine(folderCurrent, "FreeSet-ExtraBoldOblique.otf"));
-			var fontSize = 72f;
+			foo.AddFontFile(fileFont);
+			var fontSize = 96f;
 			var font = new Font((FontFamily)foo.Families[0], fontSize);
 			SizeF labelMeasure;
 			//SizeF labelMeasureStable;
@@ -251,23 +866,40 @@
 			{
 				result.SetResolution(96f, 96f);
 				using (Graphics graphics = Graphics.FromImage(result))
-				{
-					graphics.Clear(Color.Transparent);
-					graphics.CompositingQuality = CompositingQuality.HighQuality;
-					graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
-					graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-					graphics.SmoothingMode = SmoothingMode.HighQuality;
-					graphics.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-					font = new Font((FontFamily)foo.Families[0], fontSize);
 					labelMeasure = graphics.MeasureString(slotUrl, font);
-				}
 			}
-			var backColor = ColorTranslator.FromHtml("#e0312c");// FE95A3
 			var rowsCount = Regex.Split(slotUrl, @"\r?\n").Length;
-			//var angle = 10;
-			//var b = (int)Math.Abs(((90 - angle) * Math.Tan(angle))) * rowsCount;
-			var b = (int)Math.Ceiling((labelMeasure.Height * 30) / 90);
-			using (var result = new Bitmap((int)labelMeasure.Width + b * 2, (int)labelMeasure.Height + (rowsCount * 20), PixelFormat.Format24bppRgb))
+			var b = (int)Math.Ceiling((labelMeasure.Height * 18) / 90);
+			var leftOffset = 0;
+			var bytes = new byte[0];
+			if (!string.IsNullOrWhiteSpace(twitterName))
+				try
+				{
+					using (var img = Image.FromFile(GetTwitterImage(twitterName)))
+					using (var imgTwi = new Bitmap(img.Width, img.Height, PixelFormat.Format24bppRgb))
+					{
+						imgTwi.MakeTransparent(Color.Transparent);
+						imgTwi.SetResolution(96f, 96f);
+						using (var imgGraphics = Graphics.FromImage(imgTwi))
+						{
+							imgGraphics.Clear(Color.Transparent);
+							imgGraphics.CompositingQuality = CompositingQuality.HighQuality;
+							imgGraphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+							imgGraphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
+							imgGraphics.SmoothingMode = SmoothingMode.HighQuality;
+							DrawRndRect(imgGraphics, new RectangleF(0, 0, (int)imgTwi.Height, (int)imgTwi.Height), new TextureBrush(img), (int)img.Height / 2);
+							//imgGraphics.DrawImage(img, new Rectangle(0, 0, imgTwi.Width, imgTwi.Height), new Rectangle(30, 0, img.Width, img.Height), GraphicsUnit.Pixel);
+						}
+						bytes = (ImageResize.SaveAs(imgTwi, ImageFormat.Png, 100));
+						leftOffset = ((int)labelMeasure.Height + (rowsCount * 10)) / 2;
+					}
+				}
+				catch (Exception ex)
+				{
+					Log.Error(ex);
+				}
+
+			using (var result = new Bitmap((int)labelMeasure.Width + leftOffset * 2 + b * 2, (int)labelMeasure.Height + (rowsCount * 10), PixelFormat.Format24bppRgb))
 			{
 				result.MakeTransparent();
 				result.SetResolution(96f, 96f);
@@ -283,8 +915,20 @@
 					graphics.FillPolygon(brushSolid, new[] { new Point(b, 0), new Point(b, result.Height), new Point(0, result.Height), new Point(b, 0) });
 					graphics.FillPolygon(brushSolid, new[] { new Point(result.Width - 1, 0), new Point(result.Width - b, result.Height), new Point(result.Width - b, 0), new Point(result.Width - 1, 0) });
 					graphics.FillRectangle(brushSolid, b, 0, result.Width - (b * 2), result.Height);
+					if (!string.IsNullOrWhiteSpace(twitterName) && bytes.Length > 0)
+						try
+						{
+							using (var ms = new MemoryStream(bytes))
+							using (var imgTwi = Image.FromStream(ms))
+								graphics.DrawImage(imgTwi, new RectangleF(b, 10, (int)result.Height - 20, (int)result.Height - 20));
+							leftOffset = result.Height / 2;
+						}
+						catch (Exception ex)
+						{
+							Log.Error(ex);
+						}
 					var offset = 10;
-					var barWidth = result.Width - b;
+					var barWidth = result.Width - b * 2;
 					foreach (var line in slotUrl.Split('\n'))
 					{
 						var text = line;
@@ -297,23 +941,23 @@
 							text = line.Substring(2);
 						}
 						var m = graphics.MeasureString(text, font);
-						var textLeft = b;
+						var textLeft = leftOffset + b;
 						if (!leftAlign)
-							textLeft += (int)((barWidth - m.Width) - (barWidth - m.Width) / 2) - (rowsCount) * 22;
-						graphics.DrawString(text, font, new SolidBrush(Color.White), new PointF(textLeft, offset));
+							textLeft += (int)(barWidth - m.Width - ((barWidth - m.Width) / 2))/* - (rowsCount) * 22*/;
+						graphics.DrawString(text, font, new SolidBrush(textColor), new PointF(textLeft, offset));
 						if (strikeout)
 						{
 							var height = 25;
 							var width = 10;
-							var top = (int)(offset + m.Height / 2);// - height / 4);
+							var top = (int)(offset + (m.Height / 2) - height / 2);// - height / 4);
 							var left = (int)(textLeft);
-							var right = (int)(m.Width + 20 + (barWidth - m.Width) - (barWidth - m.Width) / 2);
+							var right = (int)(textLeft + m.Width);
 							var brush = new SolidBrush(Color.White);
 							graphics.FillPolygon(brush, new[] { new Point(left + width, top), new Point(left + width, top + height), new Point(left, top + height), new Point(left + width, top) });
 							graphics.DrawLine(new Pen(brush, height), left + width, top + height / 2, right, top);
 							graphics.FillPolygon(brush, new[] { new Point(right, top - height / 2), new Point(right + width, top - height / 2), new Point(right, top + height - height / 2), new Point(right, top - height / 2) });
 						}
-						offset += (int)m.Height + 5;
+						offset += (int)m.Height;
 					}
 				}
 				File.WriteAllBytes(Path.Combine(folderCurrent, "sticker.png"), ImageResize.SaveAs(result, ImageFormat.Png, 100));
@@ -335,11 +979,57 @@
 					}
 					var fileResult = Path.Combine(folderCurrent, DateTime.Now.Ticks.ToString() + ".png");
 					File.WriteAllBytes(fileResult, ImageResize.SaveAs(r, ImageFormat.Png, 100));
+					lock (stickerAddLock)
+						try
+						{
+							var packName = "KashinChat_by_snapitbot";
+							var emojis = File.ReadAllLines(Path.Combine(folderCurrent, "emojis.txt")).Select(s => s.Trim()).Distinct().Where(s => !string.IsNullOrWhiteSpace(s)).ToArray();
+							var stickersCount = 0;
+							try
+							{
+								var sstickers = Bot.GetStickerSetAsync(packName).Result.Stickers;
+								if (sstickers.Length == 0)
+									throw new Exception("sstickers.Length == 0");
+								stickersCount = sstickers.Length;
+								using (var fs = File.OpenRead(fileResult))
+									Bot.AddStickerToSetAsync(148879395, packName, new InputOnlineFile(fs), emojis[stickersCount]).Wait();
+							}
+							catch (Exception ex)
+							{
+								Log.Error(ex);
+								using (var fs = File.OpenRead(fileResult))
+									Bot.CreateNewStickerSetAsync(148879395, packName, "Густопсовый", new InputOnlineFile(fs), emojis[stickersCount]).Wait();
+							}
+							fileId = Bot.GetStickerSetAsync(packName).Result.Stickers[Bot.GetStickerSetAsync(packName).Result.Stickers.Length - 1].FileId;
+						}
+						catch (Exception ex) { Log.Error(ex); }
 					return fileResult;
 				}
 			}
 		}
 
+		public static void DrawRndRect(Graphics g, RectangleF r, Brush img, int roundRadius)
+		{
+			g.SmoothingMode = SmoothingMode.HighQuality;
+			float X = r.Left;
+			float Y = r.Top;
+			if (roundRadius < 1)
+				roundRadius = 1;
+			using (GraphicsPath _Path = new GraphicsPath())
+			{
+				_Path.AddLine(X + roundRadius, Y, X + r.Width - (roundRadius * 2), Y);
+				_Path.AddArc(X + r.Width - (roundRadius * 2), Y, roundRadius * 2, roundRadius * 2, 270, 90);
+				_Path.AddLine(X + r.Width, Y + roundRadius, X + r.Width, Y + r.Height - (roundRadius * 2));
+				_Path.AddArc(X + r.Width - (roundRadius * 2), Y + r.Height - (roundRadius * 2), roundRadius * 2, roundRadius * 2, 0, 90);
+				_Path.AddLine(X + r.Width - (roundRadius * 2), Y + r.Height, X + roundRadius, Y + r.Height);
+				_Path.AddArc(X, Y + r.Height - (roundRadius * 2), roundRadius * 2, roundRadius * 2, 90, 90);
+				_Path.AddLine(X, Y + r.Height - (roundRadius * 2), X, Y + roundRadius);
+				_Path.AddArc(X, Y, roundRadius * 2, roundRadius * 2, 180, 90);
+				g.FillPath(img, _Path);
+			}
+		}
+
+		static object stickerAddLock = new object[] { };
 		private void StickerPack()
 		{
 			var folderCurrent = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
@@ -591,10 +1281,7 @@
 						Thread.Sleep(4000);
 					}
 			var sstickers = Bot.GetStickerSetAsync(packName).Result.Stickers;
-
-
 		}
-
 
 		static Logger GetLogger()
 		{
@@ -636,6 +1323,33 @@
 				return String.IsNullOrWhiteSpace(fbid) ? linkUri : ("https://fb.com/" + fbid);
 			}
 			catch { return linkUri; }
+		}
+
+		static readonly string[] SizeSuffixes = { "bytes", "KB", "MB", "GB", "TB", "PB", "EB", "ZB", "YB" };
+		static string SizeSuffix(Int64 value, int decimalPlaces = 1)
+		{
+			if (decimalPlaces < 0) { throw new ArgumentOutOfRangeException("decimalPlaces"); }
+			if (value < 0) { return "-" + SizeSuffix(-value); }
+			if (value == 0) { return string.Format("{0:n" + decimalPlaces + "} bytes", 0); }
+
+			// mag is 0 for bytes, 1 for KB, 2, for MB, etc.
+			int mag = (int)Math.Log(value, 1024);
+
+			// 1L << (mag * 10) == 2 ^ (10 * mag) 
+			// [i.e. the number of bytes in the unit corresponding to mag]
+			decimal adjustedSize = (decimal)value / (1L << (mag * 10));
+
+			// make adjustment when the value is large enough that
+			// it would round up to 1000 or more
+			if (Math.Round(adjustedSize, decimalPlaces) >= 1000)
+			{
+				mag += 1;
+				adjustedSize /= 1024;
+			}
+
+			return string.Format("{0:n" + decimalPlaces + "} {1}",
+				adjustedSize,
+				SizeSuffixes[mag]);
 		}
 
 		private static ChromeOptions ChromeOptionsBase
@@ -694,6 +1408,75 @@
 			return url;
 		}
 
+
+		internal static bool ExecuteProcess(string fileExe, string args, TimeSpan waitSpan, out string[] consoleOK, out string[] consoleERR)
+		{
+			consoleOK = new string[0];
+			consoleERR = new string[0];
+			var outputErr = new List<string>();
+			var outputStd = new List<string>();
+			try
+			{
+				using (var process = new Process())
+				{
+					process.StartInfo = new ProcessStartInfo
+					{
+						FileName = fileExe,
+						Arguments = args,
+						UseShellExecute = false,
+						RedirectStandardError = true,
+						RedirectStandardOutput = true
+					};
+					using (var outputWaitHandle = new AutoResetEvent(false))
+					using (var errorWaitHandle = new AutoResetEvent(false))
+					{
+						process.OutputDataReceived += (s, a) =>
+						{
+							if (a.Data == null)
+								try { outputWaitHandle.Set(); } catch { }
+							if (!string.IsNullOrWhiteSpace(a.Data))
+								outputStd.Add(a.Data.Trim());
+						};
+						process.ErrorDataReceived += (s, a) =>
+						{
+							if (a.Data == null)
+								try { errorWaitHandle.Set(); } catch { }
+							if (!string.IsNullOrWhiteSpace(a.Data))
+								outputErr.Add(a.Data.Trim());
+						};
+						KillProcess(process.StartInfo.FileName, process.StartInfo.Arguments);
+						if (process.Start())
+						{
+							process.BeginOutputReadLine();
+							process.BeginErrorReadLine();
+							var timeout = waitSpan == null || waitSpan == TimeSpan.MaxValue ? -1 : (int)waitSpan.TotalMilliseconds;
+							if (process.WaitForExit(timeout) && outputWaitHandle.WaitOne(timeout * 2) && errorWaitHandle.WaitOne(timeout * 2))
+								return true;
+							process.Kill();
+							throw new TimeoutException("Process has timed out: " + waitSpan.TotalSeconds + " sec.");
+						}
+						throw new TimeoutException("Process \"" + fileExe + "\" hasn't started!");
+					}
+				}
+			}
+			catch (Exception ex)
+			{
+				outputErr.Add(ex.GetBaseException().ToString().Trim());
+				return false;
+			}
+			finally
+			{
+				consoleOK = outputStd.ToArray();
+				consoleERR = outputErr.ToArray();
+				if (consoleERR.Length > 0)
+					Log.Error(TruncateWhitespaces(String.Join(Environment.NewLine, consoleERR)));
+				Log.Warn(fileExe + " " + args + "\tTimeout: " + waitSpan + "\tOK: " + String.Join(Environment.NewLine, consoleOK) + "\tERR: " + String.Join(Environment.NewLine, consoleERR));
+			}
+		}
+		static string TruncateWhitespaces(string text)
+		{
+			return Regex.Replace(text.Trim().Replace("\t", "\\t").Replace("\r", "\\r").Replace("\n", "\\n"), @"\s+", " ").Replace("\\r\\n", "\\n").Replace("\\t", "  ").Trim();
+		}
 		public static void KillProcess(string ExecutablePath, string CommandLine)
 		{
 			int? pid;
